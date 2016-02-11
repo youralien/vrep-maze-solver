@@ -191,8 +191,11 @@ def robot_code(clientID, verbose=False):
         print("mn", m, n)
 
         walls = im[:,:,0] > 0.25
+        no_doors = im[:,:,1] * walls > 0.25
 
-        plt.imshow(walls, cmap='gray')
+        # plt.imshow(walls, cmap='gray')
+        # plt.show()
+        plt.imshow(no_doors)
         plt.show()
 
 
