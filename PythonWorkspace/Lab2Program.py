@@ -87,8 +87,28 @@ def testWheelVel():
             k_turn=100, k_forward=0.3)
         print vl, vr
 
-def robot_code(clientID):
-    # initialize handles and variables
+def prox_sens_initialize(clientID):
+    """ Initialize proximity sensor. Maybe helpful later """
+    proxSens=[]
+    for i in range(8):
+        _, oneProxSens = vrep.simxGetObjectHandle(clientID, 'ePuck_proxSensor%d' % (i+1), vrep.simx_opmode_streaming)
+        proxSens.append(oneProxSens)
+    return proxSens
+
+def prox_sens_read(clientID, proxSens):
+    """ Read the proximity sensor
+    clientID: vrep clientID
+    proxSens: array of proxSensor handles
+    """
+    outputs = []
+    keys = ('returnCode','detectionState','detectedPoint','detectedObjectHandle','detectedSurfaceNormalVector')
+    for i in range(8):
+        proxOut=vrep.simxReadProximitySensor(clientID, proxSens[i], vrep.simx_opmode_streaming)
+        outputs.append(dict(zip(keys, proxOut)))
+    return outputs
+
+def robot_code(clientID, verbose=False):
+    # initialize ePuck handles and variables
     _, bodyElements=vrep.simxGetObjectHandle(
         clientID, 'ePuck_bodyElements', vrep.simx_opmode_oneshot_wait)
     _, leftMotor=vrep.simxGetObjectHandle(
@@ -99,24 +119,26 @@ def robot_code(clientID):
         clientID, 'ePuck', vrep.simx_opmode_oneshot_wait)
     _, ePuckBase=vrep.simxGetObjectHandle(
         clientID, 'ePuck_base', vrep.simx_opmode_oneshot_wait)
-    proxSens=[]
-    for i in range(8):
-        _, oneProxSens = vrep.simxGetObjectHandle(clientID, 'ePuck_proxSensor %d' % i, vrep.simx_opmode_oneshot_wait)
-        proxSens.append(oneProxSens)
+    proxSens = prox_sens_initialize(clientID)
     maxVel=120*np.pi/180
     velLeft=0
     velRight=0
 
+    # initialize external handles
+    _, overheadCam=vrep.simxGetObjectHandle(clientID, 'Global_Vision', vrep.simx_opmode_oneshot_wait)
+
     # STOP
-    ErrorCode = vrep.simxSetJointTargetVelocity(
+    _ = vrep.simxSetJointTargetVelocity(
         clientID,leftMotor,0,vrep.simx_opmode_oneshot_wait)
-    ErrorCode = vrep.simxSetJointTargetVelocity(
+    _ = vrep.simxSetJointTargetVelocity(
         clientID,rightMotor,0,vrep.simx_opmode_oneshot_wait)
 
     t = time.time()
     while (time.time() - t) < 100:
-        print "Time Elapsed = ", time.time() - t
-
+        if verbose: print "Time Elapsed = ", time.time() - t;
+        outputs = prox_sens_read(clientID, proxSens)
+        print outputs
+        raw_input("\n")
 """
     #initialize variables
     ErrorCode = 0
