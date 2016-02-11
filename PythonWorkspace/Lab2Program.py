@@ -189,8 +189,12 @@ def robot_code(clientID, verbose=False):
         x, y, z = xyz
         m, n = odom2pixelmap(x, y, 2.55, im.shape[0])
         print("mn", m, n)
-        plt.imshow(im)
+
+        walls = im[:,:,0] > 0.25
+
+        plt.imshow(walls, cmap='gray')
         plt.show()
+
 
         raw_input("\n")
 """
