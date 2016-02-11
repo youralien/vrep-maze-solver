@@ -181,14 +181,13 @@ def robot_code(clientID, verbose=False):
         _,resolution,image = vrep.simxGetVisionSensorImage(clientID,overheadCam,0,vrep.simx_opmode_oneshot_wait) # Get image
         im = format_vrep_image(resolution, image) # original image
         im = image_vert_flip(im)
-        # im = skimage.transform.resize(im, (40,40,3))
+        im = skimage.transform.resize(im, (im.shape[0]/2,im.shape[1]/2,3))
         print(im.shape)
 
         _, xyz = vrep.simxGetObjectPosition(
             clientID, ePuck, -1, vrep.simx_opmode_buffer)
-        print(xyz)
         x, y, z = xyz
-        m, n = odom2pixelmap(x, y, 2.5, im.shape[0])
+        m, n = odom2pixelmap(x, y, 2.55, im.shape[0])
         print("mn", m, n)
         plt.imshow(im)
         plt.show()
