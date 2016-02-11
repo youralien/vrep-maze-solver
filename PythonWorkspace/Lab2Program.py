@@ -10,12 +10,15 @@ import vrep #import library for VREP API
 import time
 import numpy as np #array library
 import matplotlib.pyplot as plt #used for image plotting
-
+import skimage.transform
 
 def format_vrep_image(resolution, image):
     im = np.array(image, dtype=np.uint8)
     im.resize([resolution[1],resolution[0],3])
     return im
+
+def image_vert_flip(im):
+    return im[::-1,:,:]
 
 def threshold_for_red(im):
     RED_CHANNEL = 0
@@ -107,6 +110,35 @@ def prox_sens_read(clientID, proxSens):
         outputs.append(dict(zip(keys, proxOut)))
     return outputs
 
+def odom2pixelmap(x, y, odom_range, map_side_length):
+    """ Converts xyz in odom to the estimated pixel in the map.
+    In odom, (0, 0, 0) is in the middle of the pixelmap
+
+    Parameters
+    ----------
+    odom_range: the max magnitude of the odom vector along one of the axis
+    map_side_length: the length of one side of the map
+
+    Returns
+    -------
+    (m, n) coordinates of the pixels
+    """
+
+    # flip odom to have 0 be top left hand corner (currently bottom left)
+    y *= -1
+
+    # transform odom to no negative coordinates
+    x += odom_range
+    y += odom_range
+
+    # scale from odom coords to the map coords
+    odom_side_length = odom_range * 2
+    scaling_factor = (float(map_side_length) / odom_side_length)
+    x *= scaling_factor
+    y *= scaling_factor
+
+    return int(round(y)), int(round(x))
+
 def robot_code(clientID, verbose=False):
     # initialize ePuck handles and variables
     _, bodyElements=vrep.simxGetObjectHandle(
@@ -123,9 +155,17 @@ def robot_code(clientID, verbose=False):
     maxVel=120*np.pi/180
     velLeft=0
     velRight=0
+    # initialize odom of ePuck
+    _, xyz = vrep.simxGetObjectPosition(
+        clientID, ePuck, -1, vrep.simx_opmode_streaming)
 
-    # initialize external handles
-    _, overheadCam=vrep.simxGetObjectHandle(clientID, 'Global_Vision', vrep.simx_opmode_oneshot_wait)
+    print('xyz', xyz)
+    # initialize overhead cam
+    _, overheadCam=vrep.simxGetObjectHandle(
+        clientID, 'Global_Vision', vrep.simx_opmode_oneshot_wait)
+    _, resolution, image = vrep.simxGetVisionSensorImage(
+        clientID,overheadCam,0,vrep.simx_opmode_oneshot_wait)
+
 
     # STOP
     _ = vrep.simxSetJointTargetVelocity(
@@ -136,8 +176,23 @@ def robot_code(clientID, verbose=False):
     t = time.time()
     while (time.time() - t) < 100:
         if verbose: print "Time Elapsed = ", time.time() - t;
-        outputs = prox_sens_read(clientID, proxSens)
-        print outputs
+
+        # global map
+        _,resolution,image = vrep.simxGetVisionSensorImage(clientID,overheadCam,0,vrep.simx_opmode_oneshot_wait) # Get image
+        im = format_vrep_image(resolution, image) # original image
+        im = image_vert_flip(im)
+        # im = skimage.transform.resize(im, (40,40,3))
+        print(im.shape)
+
+        _, xyz = vrep.simxGetObjectPosition(
+            clientID, ePuck, -1, vrep.simx_opmode_buffer)
+        print(xyz)
+        x, y, z = xyz
+        m, n = odom2pixelmap(x, y, 2.5, im.shape[0])
+        print("mn", m, n)
+        plt.imshow(im)
+        plt.show()
+
         raw_input("\n")
 """
     #initialize variables
