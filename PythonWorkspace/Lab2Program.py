@@ -11,6 +11,7 @@ import time
 import numpy as np #array library
 import matplotlib.pyplot as plt #used for image plotting
 import skimage.transform
+import skimage.filters
 
 def format_vrep_image(resolution, image):
     im = np.array(image, dtype=np.uint8)
@@ -192,10 +193,14 @@ def robot_code(clientID, verbose=False):
 
         walls = im[:,:,0] > 0.25
         no_doors = im[:,:,1] * walls > 0.25
+        blurred_map = skimage.filters.gaussian_filter(no_doors, sigma=2)
+        paths = blurred_map < 0.125
 
         # plt.imshow(walls, cmap='gray')
         # plt.show()
-        plt.imshow(no_doors)
+        # plt.imshow(no_doors)
+        # plt.imshow(blurred_map)
+        plt.imshow(paths)
         plt.show()
 
 
