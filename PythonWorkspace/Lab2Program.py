@@ -208,22 +208,22 @@ def robot_code(clientID, verbose=False):
         blurred_map = skimage.filters.gaussian_filter(no_doors, sigma=2)
         paths = blurred_map < 0.15
 
-        # calculate the best path towards a goal
-
-        potentialFromGoal = np.zeros((im.shape[0], im.shape[1]))
+        # what we are doing here is creating a map of pixels which has values
+        # (255 - (distance_from_goal)
+        # which would be useful in an A* search using (manhattan) distance as a heuristic
+        distance_from_goal = np.zeros((im.shape[0], im.shape[1]))
         goal_pixel_vector = np.array([goal_m, goal_n])
         for row in range(im.shape[0]):
             for col in range(im.shape[1]):
                 current_pixel_vector = np.array([row, col])
-                potentialFromGoal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
-        pathTowardsGoal = (paths * 255) - potentialFromGoal
+                distance_from_goal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
+        pathTowardsGoal = (paths * 255) - distance_from_goal
 
         # plt.imshow(walls, cmap='gray')
-        # plt.show()
         # plt.imshow(no_doors)
         # plt.imshow(blurred_map)
         # plt.imshow(paths)
-        plt.imshow(pathTowardsGoal)
+        # plt.imshow(pathTowardsGoal, cmap='gray')
         plt.show()
 
 
