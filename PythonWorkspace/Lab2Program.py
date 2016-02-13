@@ -12,6 +12,7 @@ import numpy as np #array library
 import matplotlib.pyplot as plt #used for image plotting
 import skimage.transform
 import skimage.filters
+from scipy.spatial.distance import cityblock
 
 def format_vrep_image(resolution, image):
     im = np.array(image, dtype=np.uint8)
@@ -205,14 +206,24 @@ def robot_code(clientID, verbose=False):
         walls = im[:,:,0] > 0.25
         no_doors = im[:,:,1] * walls > 0.25
         blurred_map = skimage.filters.gaussian_filter(no_doors, sigma=2)
-        paths = blurred_map < 0.125
+        paths = blurred_map < 0.15
 
-        pathWithGoalAttraction = calculate
+        # calculate the best path towards a goal
+
+        potentialFromGoal = np.zeros((im.shape[0], im.shape[1]))
+        goal_pixel_vector = np.array([goal_m, goal_n])
+        for row in range(im.shape[0]):
+            for col in range(im.shape[1]):
+                current_pixel_vector = np.array([row, col])
+                potentialFromGoal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
+        pathTowardsGoal = (paths * 255) - potentialFromGoal
+
         # plt.imshow(walls, cmap='gray')
         # plt.show()
         # plt.imshow(no_doors)
         # plt.imshow(blurred_map)
-        plt.imshow(paths)
+        # plt.imshow(paths)
+        plt.imshow(pathTowardsGoal)
         plt.show()
 
 
