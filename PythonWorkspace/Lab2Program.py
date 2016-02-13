@@ -162,6 +162,19 @@ def vomega2bytecodes(v, omega, g, L=0.216):
     ctrl_sig_right = (v_comm + v_diff) / float(g)
     return ctrl_sig_left, ctrl_sig_right
 
+class Util(object):
+    @staticmethod
+    def normalize_angle_pos(angle):
+        return ((angle % (2*np.pi)) + 2*np.pi) % (2*np.pi)
+
+    @staticmethod
+    def normalize_angle(angle):
+        """ Constrains the angles to the range [0, pi) U [-pi, 0) """
+        a = Util.normalize_angle_pos(angle)
+        if a > np.pi:
+            a -= 2*np.pi
+        return a
+
 def robot_code(clientID, verbose=False):
     # initialize ePuck handles and variables
     _, bodyElements=vrep.simxGetObjectHandle(
@@ -221,11 +234,12 @@ def robot_code(clientID, verbose=False):
             clientID, ePuck, -1, vrep.simx_opmode_buffer)
         x, y, z = xyz
         theta = eulerAngles[2]
-        m, n = odom2pixelmap(x, y, 2.5, im.shape[0])
+        map_side_length = 2.6
+        m, n = odom2pixelmap(x, y, map_side_length, im.shape[0])
         # acquire pixel location of goal
         _, goalPose = vrep.simxGetObjectPosition(
             clientID, goal, -1, vrep.simx_opmode_buffer)
-        goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], 2.5, im.shape[0])
+        goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], map_side_length, im.shape[0])
 
         walls = im[:,:,0] > 0.25
         no_doors = im[:,:,1] * walls > 0.25
@@ -244,24 +258,32 @@ def robot_code(clientID, verbose=False):
         pathTowardsGoal = (paths * 255) - distance_from_goal
 
         # use "cardinal direction firing" technique to determine which cardinal direction is best
-        window_size = 5 # odd
+        window_size = 7 # odd
         fr = (window_size - 1) / 2 # fire range
         # FIXME: this is going to suffer from padding maybe
-        east  = np.sum(pathTowardsGoal[m        ,n   :n+fr])
-        north = np.sum(pathTowardsGoal[m   :m+fr,n        ])
-        west  = np.sum(pathTowardsGoal[m        ,n-fr:n   ])
-        south = np.sum(pathTowardsGoal[m-fr:m   ,n        ])
-        cardinal_dir = np.array([east, north, west, south]) # matching unit circle
+        northeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n,n+fr))
+        northwest_idx = (np.arange(m,m+fr)       , np.arange(n,n+fr))
+        southwest_idx = (np.arange(m,m+fr)       , np.arange(n-1,n-fr-1,-1))
+        southeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n-1,n-fr-1,-1))
+        east      = np.sum(pathTowardsGoal[m        ,n   :n+fr])
+        northeast = np.sum(pathTowardsGoal[northeast_idx])
+        north     = np.sum(pathTowardsGoal[m   :m+fr,n        ])
+        northwest = np.sum(pathTowardsGoal[northwest_idx])
+        west      = np.sum(pathTowardsGoal[m        ,n-fr:n   ])
+        southwest = np.sum(pathTowardsGoal[southwest_idx])
+        south     = np.sum(pathTowardsGoal[m-fr:m   ,n        ])
+        southeast = np.sum(pathTowardsGoal[southeast_idx])
+        cardinal_dir = np.array([east, northeast, north, northwest, west, southwest, south, southeast]) # matching unit circle
 
         # calculate desired heading
-        theta_map = np.pi / 2 * np.argmax(cardinal_dir)
+        theta_map = np.pi / 4 * np.argmax(cardinal_dir)
         theta_map -= np.pi # should be [-pi, pi]
 
         # proportional control on angular velocity
         k_angular = 0.5
-        # headings are all flipped, based on experience in the simulator
         theta *= -1
-        delta_theta = (theta - theta_map)
+        # headings are all flipped, based on experience in the simulator
+        delta_theta = Util.normalize_angle(theta - theta_map)
         print(round(theta,2), round(theta_map,2), round(delta_theta,2))
         omega = k_angular * delta_theta
 
