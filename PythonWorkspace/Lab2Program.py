@@ -225,7 +225,7 @@ def robot_code(clientID, verbose=False):
         _,resolution,image = vrep.simxGetVisionSensorImage(clientID,overheadCam,0,vrep.simx_opmode_oneshot_wait) # Get image
         im = format_vrep_image(resolution, image) # original image
         im = image_vert_flip(im)
-        im = skimage.transform.resize(im, (im.shape[0]/2,im.shape[1]/2,3))
+        im = skimage.transform.resize(im, (im.shape[0]/1.5,im.shape[1]/1.5,3))
         print(im.shape)
 
         _, xyz = vrep.simxGetObjectPosition(
