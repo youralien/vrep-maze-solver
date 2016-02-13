@@ -141,6 +141,24 @@ def odom2pixelmap(x, y, odom_range, map_side_length):
 
     return int(round(y)), int(round(x))
 
+def vomega2bytecodes(v, omega, g, L=0.216):
+    """
+    Turns v and omega into control codes for differential drive robot
+    v: forward velocity
+    omega: angular velocity
+    g: gain constant
+    L: length of axle, default .216
+        >>> right = -1.9914
+        >>> left = -2.2074
+        >>> right - left
+        0.21599999999999975
+    """
+    v_comm = v
+    v_diff = omega * L / 2.0
+    ctrl_sig_left = (v_comm - v_diff) / float(g)
+    ctrl_sig_right = (v_comm + v_diff) / float(g)
+    return ctrl_sig_left, ctrl_sig_right
+
 def robot_code(clientID, verbose=False):
     # initialize ePuck handles and variables
     _, bodyElements=vrep.simxGetObjectHandle(
@@ -219,15 +237,23 @@ def robot_code(clientID, verbose=False):
                 distance_from_goal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
         pathTowardsGoal = (paths * 255) - distance_from_goal
 
+        v = -0.5
+        omega = 1
+        g = 1
+        ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(v, omega, g)
+        _ = vrep.simxSetJointTargetVelocity(
+            clientID,leftMotor,ctrl_sig_left,vrep.simx_opmode_oneshot_wait) # set left wheel velocity
+        _ = vrep.simxSetJointTargetVelocity(
+            clientID,rightMotor,ctrl_sig_right,vrep.simx_opmode_oneshot_wait) # set right wheel velocity
+
         # plt.imshow(walls, cmap='gray')
         # plt.imshow(no_doors)
         # plt.imshow(blurred_map)
         # plt.imshow(paths)
-        # plt.imshow(pathTowardsGoal, cmap='gray')
+        # plt.imshow(pathTowardsGoal)
         plt.show()
 
 
-        raw_input("\n")
 """
     #initialize variables
     ErrorCode = 0
