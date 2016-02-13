@@ -175,6 +175,32 @@ class Util(object):
             a -= 2*np.pi
         return a
 
+def best_theta_map(pathTowardsGoal, m, n, fr, original_four):
+    if original_four:
+        east      = np.sum(pathTowardsGoal[m        ,n   :n+fr])
+        north     = np.sum(pathTowardsGoal[m-fr:m   ,n  ])
+        west      = np.sum(pathTowardsGoal[m,n-fr:n   ])
+        south     = np.sum(pathTowardsGoal[m   :m+fr,n  ])
+        cardinal_dir = np.array([east,  north, west, south]) # matching unit circle
+        theta_map = np.pi / 2 * np.argmax(cardinal_dir)
+    else:
+        northeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n,n+fr))
+        northwest_idx = (np.arange(m,m+fr)       , np.arange(n,n+fr))
+        southwest_idx = (np.arange(m,m+fr)       , np.arange(n-1,n-fr-1,-1))
+        southeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n-1,n-fr-1,-1))
+        east      = np.sum(pathTowardsGoal[m        ,n   :n+fr])
+        northeast = np.sum(pathTowardsGoal[northeast_idx])
+        north     = np.sum(pathTowardsGoal[m-fr:m   ,n  ])
+        northwest = np.sum(pathTowardsGoal[northwest_idx])
+        west      = np.sum(pathTowardsGoal[m,n-fr:n   ])
+        southwest = np.sum(pathTowardsGoal[southwest_idx])
+        south     = np.sum(pathTowardsGoal[m   :m+fr,n  ])
+        southeast = np.sum(pathTowardsGoal[southeast_idx])
+        cardinal_dir = np.array([east, northeast, north, northwest, west, southwest, south, southeast]) # matching unit circle
+        theta_map = np.pi / 4 * np.argmax(cardinal_dir)
+    print cardinal_dir
+    return theta_map
+
 def robot_code(clientID, verbose=False):
     # initialize ePuck handles and variables
     _, bodyElements=vrep.simxGetObjectHandle(
@@ -225,8 +251,8 @@ def robot_code(clientID, verbose=False):
         _,resolution,image = vrep.simxGetVisionSensorImage(clientID,overheadCam,0,vrep.simx_opmode_oneshot_wait) # Get image
         im = format_vrep_image(resolution, image) # original image
         im = image_vert_flip(im)
-        im = skimage.transform.resize(im, (im.shape[0]/1.5,im.shape[1]/1.5,3))
-        print(im.shape)
+        resize_length = int(im.shape[0]/2)
+        im = skimage.transform.resize(im, (resize_length, resize_length, 3))
 
         _, xyz = vrep.simxGetObjectPosition(
             clientID, ePuck, -1, vrep.simx_opmode_buffer)
@@ -234,7 +260,7 @@ def robot_code(clientID, verbose=False):
             clientID, ePuck, -1, vrep.simx_opmode_buffer)
         x, y, z = xyz
         theta = eulerAngles[2]
-        map_side_length = 2.6
+        map_side_length = 2.55
         m, n = odom2pixelmap(x, y, map_side_length, im.shape[0])
         # acquire pixel location of goal
         _, goalPose = vrep.simxGetObjectPosition(
@@ -243,7 +269,7 @@ def robot_code(clientID, verbose=False):
 
         walls = im[:,:,0] > 0.25
         no_doors = im[:,:,1] * walls > 0.25
-        blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
+        blurred_map = skimage.filters.gaussian_filter(walls, sigma=2.5)
         paths = blurred_map < 0.15
 
         # what we are doing here is creating a map of pixels which has values
@@ -256,35 +282,25 @@ def robot_code(clientID, verbose=False):
                 current_pixel_vector = np.array([row, col])
                 distance_from_goal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
         pathTowardsGoal = (paths * 255) - distance_from_goal
+        print np.where(paths == False)
+        print np.min(pathTowardsGoal)
+        pathTowardsGoal[np.where(paths == False)] -= 100
+        print np.min(pathTowardsGoal)
 
         # use "cardinal direction firing" technique to determine which cardinal direction is best
         window_size = 7 # odd
         fr = (window_size - 1) / 2 # fire range
-        # FIXME: this is going to suffer from padding maybe
-        northeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n,n+fr))
-        northwest_idx = (np.arange(m,m+fr)       , np.arange(n,n+fr))
-        southwest_idx = (np.arange(m,m+fr)       , np.arange(n-1,n-fr-1,-1))
-        southeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n-1,n-fr-1,-1))
-        east      = np.sum(pathTowardsGoal[m        ,n   :n+fr])
-        northeast = np.sum(pathTowardsGoal[northeast_idx])
-        north     = np.sum(pathTowardsGoal[m   :m+fr,n        ])
-        northwest = np.sum(pathTowardsGoal[northwest_idx])
-        west      = np.sum(pathTowardsGoal[m        ,n-fr:n   ])
-        southwest = np.sum(pathTowardsGoal[southwest_idx])
-        south     = np.sum(pathTowardsGoal[m-fr:m   ,n        ])
-        southeast = np.sum(pathTowardsGoal[southeast_idx])
-        cardinal_dir = np.array([east, northeast, north, northwest, west, southwest, south, southeast]) # matching unit circle
+        theta_map = best_theta_map(pathTowardsGoal, m, n, fr, original_four=True)
 
         # calculate desired heading
-        theta_map = np.pi / 4 * np.argmax(cardinal_dir)
-        theta_map -= np.pi # should be [-pi, pi]
+        theta_map -= np.pi / 2 # east should be - np / 2
 
         # proportional control on angular velocity
-        k_angular = 0.5
-        theta *= -1
+        k_angular = 0.75
+        theta += np.pi / 2
         # headings are all flipped, based on experience in the simulator
-        delta_theta = Util.normalize_angle(theta - theta_map)
-        print(round(theta,2), round(theta_map,2), round(delta_theta,2))
+        delta_theta = theta - theta_map
+        print(theta*180/np.pi, theta_map*180/np.pi, round(delta_theta,2))
         omega = k_angular * delta_theta
 
         # constant motor control for now
@@ -303,8 +319,8 @@ def robot_code(clientID, verbose=False):
         # plt.imshow(blurred_map)
         # plt.imshow(paths)
         pathTowardsGoal[m,n] = 0
-        plt.imshow(pathTowardsGoal)
-        plt.pause(0.1)
+        # plt.imshow(pathTowardsGoal)
+        # plt.pause(0.1)
         time.sleep(0.05) #sleep 50ms
 
 """
