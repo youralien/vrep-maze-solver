@@ -237,9 +237,21 @@ def robot_code(clientID, verbose=False):
                 distance_from_goal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
         pathTowardsGoal = (paths * 255) - distance_from_goal
 
+        # use "cardinal direction firing" technique to determine which cardinal direction is best
+        window_size = 5 # odd
+        fr = (window_size - 1) / 2 # fire range
+        # FIXME: this is going to suffer from padding maybe
+        north = np.sum(pathTowardsGoal[m   :m+fr,n        ])
+        south = np.sum(pathTowardsGoal[m-fr:m   ,n        ])
+        east  = np.sum(pathTowardsGoal[m        ,n   :n+fr])
+        west  = np.sum(pathTowardsGoal[m        ,n-fr:n   ])
+        nsew = np.array([north, south, east, west])
+        print "directions argmax: ", np.argmax(nsew)
         v = -0.5
         omega = 1
         g = 1
+
+        # control the motors
         ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(v, omega, g)
         _ = vrep.simxSetJointTargetVelocity(
             clientID,leftMotor,ctrl_sig_left,vrep.simx_opmode_oneshot_wait) # set left wheel velocity
