@@ -14,6 +14,9 @@ import skimage.transform
 import skimage.filters
 from scipy.spatial.distance import cityblock
 
+# interactive plotting
+plt.ion()
+
 def format_vrep_image(resolution, image):
     im = np.array(image, dtype=np.uint8)
     im.resize([resolution[1],resolution[0],3])
@@ -179,8 +182,10 @@ def robot_code(clientID, verbose=False):
     # FIXME: xyz is not a pose. xytheta is.
     _, xyz = vrep.simxGetObjectPosition(
         clientID, ePuck, -1, vrep.simx_opmode_streaming)
+    _, eulerAngles = vrep.simxGetObjectOrientation(
+        clientID, ePuck, -1, vrep.simx_opmode_streaming)
 
-    print('xyz', xyz)
+
     # initialize overhead cam
     _, overheadCam=vrep.simxGetObjectHandle(
         clientID, 'Global_Vision', vrep.simx_opmode_oneshot_wait)
@@ -212,18 +217,19 @@ def robot_code(clientID, verbose=False):
 
         _, xyz = vrep.simxGetObjectPosition(
             clientID, ePuck, -1, vrep.simx_opmode_buffer)
+        _, eulerAngles = vrep.simxGetObjectOrientation(
+            clientID, ePuck, -1, vrep.simx_opmode_buffer)
         x, y, z = xyz
-        m, n = odom2pixelmap(x, y, 2.55, im.shape[0])
-        print("mn", m, n)
+        theta = eulerAngles[2]
+        m, n = odom2pixelmap(x, y, 2.5, im.shape[0])
         # acquire pixel location of goal
         _, goalPose = vrep.simxGetObjectPosition(
             clientID, goal, -1, vrep.simx_opmode_buffer)
-        goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], 2.55, im.shape[0])
-        print("goal_mn", goal_m, goal_n)
+        goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], 2.5, im.shape[0])
 
         walls = im[:,:,0] > 0.25
         no_doors = im[:,:,1] * walls > 0.25
-        blurred_map = skimage.filters.gaussian_filter(no_doors, sigma=2)
+        blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
         paths = blurred_map < 0.15
 
         # what we are doing here is creating a map of pixels which has values
@@ -241,14 +247,26 @@ def robot_code(clientID, verbose=False):
         window_size = 5 # odd
         fr = (window_size - 1) / 2 # fire range
         # FIXME: this is going to suffer from padding maybe
-        north = np.sum(pathTowardsGoal[m   :m+fr,n        ])
-        south = np.sum(pathTowardsGoal[m-fr:m   ,n        ])
         east  = np.sum(pathTowardsGoal[m        ,n   :n+fr])
+        north = np.sum(pathTowardsGoal[m   :m+fr,n        ])
         west  = np.sum(pathTowardsGoal[m        ,n-fr:n   ])
-        nsew = np.array([north, south, east, west])
-        print "directions argmax: ", np.argmax(nsew)
-        v = -0.5
-        omega = 1
+        south = np.sum(pathTowardsGoal[m-fr:m   ,n        ])
+        cardinal_dir = np.array([east, north, west, south]) # matching unit circle
+
+        # calculate desired heading
+        theta_map = np.pi / 2 * np.argmax(cardinal_dir)
+        theta_map -= np.pi # should be [-pi, pi]
+
+        # proportional control on angular velocity
+        k_angular = 0.5
+        # headings are all flipped, based on experience in the simulator
+        theta *= -1
+        delta_theta = (theta - theta_map)
+        print(round(theta,2), round(theta_map,2), round(delta_theta,2))
+        omega = k_angular * delta_theta
+
+        # constant motor control for now
+        v = 0.5
         g = 1
 
         # control the motors
@@ -262,9 +280,10 @@ def robot_code(clientID, verbose=False):
         # plt.imshow(no_doors)
         # plt.imshow(blurred_map)
         # plt.imshow(paths)
-        # plt.imshow(pathTowardsGoal)
-        plt.show()
-
+        pathTowardsGoal[m,n] = 0
+        plt.imshow(pathTowardsGoal)
+        plt.pause(0.1)
+        time.sleep(0.05) #sleep 50ms
 
 """
     #initialize variables
