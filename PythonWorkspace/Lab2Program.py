@@ -175,13 +175,55 @@ class Util(object):
             a -= 2*np.pi
         return a
 
-def best_theta_map(pathTowardsGoal, m, n, fr, original_four):
+def best_theta_map(paths, pathTowardsGoal, m, n, fr, original_four):
     if original_four:
-        east      = np.sum(pathTowardsGoal[m        ,n   :n+fr])
-        north     = np.sum(pathTowardsGoal[m-fr:m   ,n  ])
-        west      = np.sum(pathTowardsGoal[m,n-fr:n   ])
-        south     = np.sum(pathTowardsGoal[m   :m+fr,n  ])
-        cardinal_dir = np.array([east,  north, west, south]) # matching unit circle
+        hit_wall = False
+        count = 1
+        east = 0
+        while (not hit_wall and count <= fr):
+            if paths[m,n+count] == False:
+                hit_wall = True
+            else:
+                east += pathTowardsGoal[m,n+count]
+                count += 1
+
+        hit_wall = False
+        count = 1
+        north = 0
+        while (not hit_wall and count <= fr):
+            if paths[m-count,n] == False:
+                hit_wall = True
+            else:
+                north += pathTowardsGoal[m-count,n]
+                count += 1
+
+        hit_wall = False
+        count = 1
+        west = 0
+        while (not hit_wall and count <= fr):
+            if paths[m,n-count] == False:
+                hit_wall = True
+            else:
+                west += pathTowardsGoal[m,n-count]
+                count += 1
+
+        hit_wall = False
+        count = 1
+        south = 0
+        while (not hit_wall and count <= fr):
+            if paths[m+count,n] == False:
+                hit_wall = True
+            else:
+                south += pathTowardsGoal[m+count,n]
+                count += 1
+
+        # east      = np.sum(pathTowardsGoal[m,n:n+fr])
+        # north_thing = pathTowardsGoal[m-fr:m,n]
+        # print north_thing
+        # north     = np.sum(north_thing)
+        # west      = np.sum(pathTowardsGoal[m,n-fr:n])
+        # south     = np.sum(pathTowardsGoal[m:m+fr,n])
+        cardinal_dir = np.array([east, north, west, south]) # matching unit circle
         theta_map = np.pi / 2 * np.argmax(cardinal_dir)
     else:
         northeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n,n+fr))
@@ -269,7 +311,7 @@ def robot_code(clientID, verbose=False):
 
         walls = im[:,:,0] > 0.25
         no_doors = im[:,:,1] * walls > 0.25
-        blurred_map = skimage.filters.gaussian_filter(walls, sigma=2.5)
+        blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
         paths = blurred_map < 0.15
 
         # what we are doing here is creating a map of pixels which has values
@@ -282,15 +324,11 @@ def robot_code(clientID, verbose=False):
                 current_pixel_vector = np.array([row, col])
                 distance_from_goal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
         pathTowardsGoal = (paths * 255) - distance_from_goal
-        print np.where(paths == False)
-        print np.min(pathTowardsGoal)
-        pathTowardsGoal[np.where(paths == False)] -= 100
-        print np.min(pathTowardsGoal)
 
         # use "cardinal direction firing" technique to determine which cardinal direction is best
-        window_size = 7 # odd
+        window_size = 10
         fr = (window_size - 1) / 2 # fire range
-        theta_map = best_theta_map(pathTowardsGoal, m, n, fr, original_four=True)
+        theta_map = best_theta_map(paths, pathTowardsGoal, m, n, fr, original_four=True)
 
         # calculate desired heading
         theta_map -= np.pi / 2 # east should be - np / 2
@@ -319,8 +357,8 @@ def robot_code(clientID, verbose=False):
         # plt.imshow(blurred_map)
         # plt.imshow(paths)
         pathTowardsGoal[m,n] = 0
-        # plt.imshow(pathTowardsGoal)
-        # plt.pause(0.1)
+        plt.imshow(pathTowardsGoal)
+        plt.pause(0.1)
         time.sleep(0.05) #sleep 50ms
 
 """
