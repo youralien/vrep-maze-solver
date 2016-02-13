@@ -157,6 +157,7 @@ def robot_code(clientID, verbose=False):
     velLeft=0
     velRight=0
     # initialize odom of ePuck
+    # FIXME: xyz is not a pose. xytheta is.
     _, xyz = vrep.simxGetObjectPosition(
         clientID, ePuck, -1, vrep.simx_opmode_streaming)
 
@@ -167,6 +168,11 @@ def robot_code(clientID, verbose=False):
     _, resolution, image = vrep.simxGetVisionSensorImage(
         clientID,overheadCam,0,vrep.simx_opmode_oneshot_wait)
 
+    # initialize goal handle + odom
+    _, goal=vrep.simxGetObjectHandle(
+        clientID, 'Goal_Position', vrep.simx_opmode_oneshot_wait)
+    _, goalPose = vrep.simxGetObjectPosition(
+        clientID, goal, -1, vrep.simx_opmode_streaming)
 
     # STOP
     _ = vrep.simxSetJointTargetVelocity(
@@ -190,12 +196,18 @@ def robot_code(clientID, verbose=False):
         x, y, z = xyz
         m, n = odom2pixelmap(x, y, 2.55, im.shape[0])
         print("mn", m, n)
+        # acquire pixel location of goal
+        _, goalPose = vrep.simxGetObjectPosition(
+            clientID, goal, -1, vrep.simx_opmode_buffer)
+        goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], 2.55, im.shape[0])
+        print("goal_mn", goal_m, goal_n)
 
         walls = im[:,:,0] > 0.25
         no_doors = im[:,:,1] * walls > 0.25
         blurred_map = skimage.filters.gaussian_filter(no_doors, sigma=2)
         paths = blurred_map < 0.125
 
+        pathWithGoalAttraction = calculate
         # plt.imshow(walls, cmap='gray')
         # plt.show()
         # plt.imshow(no_doors)
