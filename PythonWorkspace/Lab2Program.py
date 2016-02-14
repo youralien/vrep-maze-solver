@@ -153,6 +153,10 @@ def pseudoLidarSensor(paths, m, n, fr, original_four):
             ray_trace(paths, m, n, fr, func)
             for func in functions
         ]
+        # but the diagnols should have sqrt(2) more weight
+        for i in range(len(lidarValues)):
+            if i % 2 == 1:
+                lidarValues[i] *= np.sqrt(2)
 
     return lidarValues
 
@@ -212,7 +216,6 @@ def robot_code(clientID, verbose=False):
         clientID, 'ePuck_base', vrep.simx_opmode_oneshot_wait)
     # proxSens = prox_sens_initialize(clientID)
     # initialize odom of ePuck
-    # FIXME: xyz is not a pose. xytheta is.
     _, xyz = vrep.simxGetObjectPosition(
         clientID, ePuck, -1, vrep.simx_opmode_streaming)
     _, eulerAngles = vrep.simxGetObjectOrientation(
@@ -238,6 +241,7 @@ def robot_code(clientID, verbose=False):
         clientID,rightMotor,0,vrep.simx_opmode_oneshot_wait)
 
     worldNorthTheta = None
+
     t = time.time()
     while (time.time() - t) < 100:
         if verbose: print "Time Elapsed = ", time.time() - t;
@@ -267,7 +271,7 @@ def robot_code(clientID, verbose=False):
             clientID, goal, -1, vrep.simx_opmode_buffer)
         goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], map_side_length, im.shape[0])
         # FIXME: temp goal
-        goal_m, goal_n = (58,48)
+        goal_m, goal_n = (40,6)
 
         walls = im[:,:,0] > 0.25
         # no_doors = im[:,:,1] * walls > 0.25
@@ -287,7 +291,7 @@ def robot_code(clientID, verbose=False):
         window_size = 21           # odd
         fr = (window_size - 1) / 2 # fire range
         lidarValues = pseudoLidarSensor(paths, m, n, fr, original_four=False)
-        print "lidarValues =", lidarValues
+        # print "lidarValues =", np.array(lidarValues).reshape(-1,1)
 
         #############################
         # Potential Field Algorithm #
@@ -305,26 +309,26 @@ def robot_code(clientID, verbose=False):
             rho_0: distance of influence
             """
             if rho <= rho_0:
-                return k_repulse*(1.0/rho - 1.0/rho_0)*(1.0/rho**2)
+                return -1.0 * k_repulse*(1.0/rho - 1.0/rho_0)*(1.0/rho**2)
             else:
                 return 0
         # repulsionVectors = [np.array(pol2cart(k_repulse/(val - 0.75)**2, angle)) for val, angle in zip(lidarValues, lidarAngles)]
-        repulsionVectors = np.vstack([np.array(pol2cart(force_repulsion(k_repulse, val, 7), angle)) for val, angle in zip(lidarValues, lidarAngles)])
+        repulsionVectors = np.vstack([np.array(pol2cart(force_repulsion(k_repulse, val, 3), angle)) for val, angle in zip(lidarValues, lidarAngles)])
         attractionVal, attractionAngle = cart2pol(
             goal_n - n, # cols counts same     to normal horz axes
             m - goal_m  # rows counts opposite to normal vert axes
         )
         # Objects attraction should be inverse proportional to distance
         # Small Distances should be very high attraction
-        k_attract = 50.0
+        k_attract = 1000.0
         attractionVector = np.array(pol2cart(k_attract/attractionVal, attractionAngle))
 
-        print np.vstack((repulsionVectors, attractionVector))
+        # print np.vstack((repulsionVectors, attractionVector))
         finalVector = np.sum(np.vstack((repulsionVectors, attractionVector)),   axis=0)
         # finalVector = np.sum(np.vstack(repulsionVectors),   axis=0)
         print "finalVector: ", finalVector
         finalValue, finalAngle = cart2pol(finalVector[0], finalVector[1])
-        print "finalVal, finalAngle: ", (finalValue, finalAngle*180/np.pi)
+        # print "finalVal, finalAngle: ", (finalValue, finalAngle*180/np.pi)
 
         # proportional control on angular velocity
         k_angular = 0.25
@@ -338,7 +342,11 @@ def robot_code(clientID, verbose=False):
         print "Omega: ", round(omega,1)
 
         g = 1
-        forward_vel = 0.5
+        print "distance_from_goal: ", distance_from_goal[m,n]
+        if distance_from_goal[m,n] == 1:
+            forward_vel = 0
+        else:
+            forward_vel = 1.0
 
         # if np.abs(omega - 0) < 0.2:
         #     forward_vel = 0.5
@@ -375,8 +383,10 @@ def main():
 
 
     if clientID!=-1:
-
-        robot_code(clientID)
+        try:
+            robot_code(clientID)
+        except IndexError, e:
+            pass
 
     vrep.simxFinish(clientID)
     print 'Program ended'
