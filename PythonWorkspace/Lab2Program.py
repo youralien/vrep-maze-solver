@@ -358,6 +358,8 @@ def robot_code(clientID, verbose=False):
         _, goalPose = vrep.simxGetObjectPosition(
             clientID, goal, -1, vrep.simx_opmode_buffer)
         goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], map_side_length, im.shape[0])
+        # FIXME: temp goal
+        goal_m, goal_n = (58,48)
 
         walls = im[:,:,0] > 0.25
         no_doors = im[:,:,1] * walls > 0.25
@@ -383,27 +385,36 @@ def robot_code(clientID, verbose=False):
         #############################
         # Potential Field Algorithm #
         #############################
-        # constant motor control for now
-        forward_vel = 0.5
-
         numLidarValues = len(lidarValues)
         lidarAngles = [np.pi / numLidarValues * index for index in range(numLidarValues)]
 
         # Objects repulsion should be inverse of distance
         # Small Distances should be very high repulsion
-        k_repulse = 1.0
-        repulsionVectors = [np.array(pol2cart(k_repulse/val**2, angle)) for val, angle in zip(lidarValues, lidarAngles)]
-
+        k_repulse = 1000.0
+        def force_repulsion(k_repulse, rho, rho_0):
+            """
+            k_repulse: positive scaling factor
+            rho: distance from point to obstacle
+            rho_0: distance of influence
+            """
+            if rho <= rho_0:
+                return k_repulse*(1.0/rho - 1.0/rho_0)*(1.0/rho**2)
+            else:
+                return 0
+        # repulsionVectors = [np.array(pol2cart(k_repulse/(val - 0.75)**2, angle)) for val, angle in zip(lidarValues, lidarAngles)]
+        repulsionVectors = np.vstack([np.array(pol2cart(force_repulsion(k_repulse, val, 7), angle)) for val, angle in zip(lidarValues, lidarAngles)])
         attractionVal, attractionAngle = cart2pol(
             goal_n - n, # cols counts same     to normal horz axes
             m - goal_m  # rows counts opposite to normal vert axes
         )
         # Objects attraction should be inverse proportional to distance
         # Small Distances should be very high attraction
-        k_attract = 2.0
+        k_attract = 50.0
         attractionVector = np.array(pol2cart(k_attract/attractionVal, attractionAngle))
 
-        finalVector = np.sum(np.vstack((repulsionVectors, attractionVector)), axis=0)
+        print np.vstack((repulsionVectors, attractionVector))
+        finalVector = np.sum(np.vstack((repulsionVectors, attractionVector)),   axis=0)
+        # finalVector = np.sum(np.vstack(repulsionVectors),   axis=0)
         print "finalVector: ", finalVector
         finalValue, finalAngle = cart2pol(finalVector[0], finalVector[1])
         print "finalVal, finalAngle: ", (finalValue, finalAngle*180/np.pi)
@@ -420,7 +431,13 @@ def robot_code(clientID, verbose=False):
         print "Omega: ", round(omega,1)
 
         g = 1
+        forward_vel = 0.5
 
+        # if np.abs(omega - 0) < 0.2:
+        #     forward_vel = 0.5
+        # else:
+        #     forward_vel = 0.0
+        #     omega *= 5
         # control the motors
         ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(forward_vel, omega, g)
         _ = vrep.simxSetJointTargetVelocity(
@@ -432,9 +449,10 @@ def robot_code(clientID, verbose=False):
         # plt.imshow(no_doors)
         # plt.imshow(blurred_map)
         # plt.imshow(paths)
-        # pathTowardsGoal[m,n] = 0
-        # plt.imshow(pathTowardsGoal)
-        # plt.pause(0.1)
+        im[goal_m,goal_n] = np.array((1.0, 1.0, 1.0))
+        im[m,n,:] = np.array((255.0/255.0,192/255.0,203/255.0))
+        plt.imshow(im)
+        plt.pause(0.1)
         time.sleep(0.05) #sleep 50ms
 
 """
