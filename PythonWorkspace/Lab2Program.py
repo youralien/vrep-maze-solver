@@ -8,6 +8,7 @@ Version: 0.0.1
 #Import Libraries:
 import vrep #import library for VREP API
 import time
+import math
 import numpy as np #array library
 import matplotlib.pyplot as plt #used for image plotting
 import skimage.transform
@@ -106,6 +107,25 @@ class ThetaRange(object):
             a -= 2*np.pi
         return a
 
+def angle_diff(a, b):
+    """ Calculates the difference between angle a and angle b (both should be in radians)
+        the difference is always based on the closest rotation from angle a to angle b
+        examples:
+            angle_diff(.1,.2) -> -.1
+            angle_diff(.1, 2*math.pi - .1) -> .2
+            angle_diff(.1, .2+2*math.pi) -> -.1
+    """
+    a = ThetaRange.normalize_angle(a)
+    b = ThetaRange.normalize_angle(b)
+    d1 = a-b
+    d2 = 2*math.pi - math.fabs(d1)
+    if d1 > 0:
+        d2 *= -1.0
+    if math.fabs(d1) < math.fabs(d2):
+        return d1
+    else:
+        return d2
+
 def ray_trace(paths, m, n, fr, compute_next_cell):
     """
     paths: a map of binary values, where True denotes pixels where robot can go (not walls)
@@ -200,6 +220,16 @@ def test_mapTheta2worldTheta():
     # south
     assert (mapTheta2worldTheta(3*np.pi/2, northTheta) == -np.pi)
 
+    northTheta = -np.pi / 2
+    # east
+    assert (mapTheta2worldTheta(0, northTheta) == -np.pi)
+    # north
+    assert (mapTheta2worldTheta(1*np.pi/2, northTheta) == -np.pi / 2)
+    # west
+    assert (mapTheta2worldTheta(2*np.pi/2, northTheta) == 0)
+    # south
+    assert (mapTheta2worldTheta(3*np.pi/2, northTheta) == np.pi / 2)
+
 test_mapTheta2worldTheta()
 
 def robot_code(clientID, verbose=False):
@@ -240,6 +270,10 @@ def robot_code(clientID, verbose=False):
     _ = vrep.simxSetJointTargetVelocity(
         clientID,rightMotor,0,vrep.simx_opmode_oneshot_wait)
 
+    # FIMXE: hard coded goals
+    GOALS = [(40,6), (40,21)]
+    current_goal_idx = 0
+
     worldNorthTheta = None
 
     t = time.time()
@@ -269,9 +303,10 @@ def robot_code(clientID, verbose=False):
         # acquire pixel location of goal
         _, goalPose = vrep.simxGetObjectPosition(
             clientID, goal, -1, vrep.simx_opmode_buffer)
-        goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], map_side_length, im.shape[0])
+        # goal_m, goal_n = odom2pixelmap(goalPose[0], goalPose[1], map_side_length, im.shape[0])
         # FIXME: temp goal
-        goal_m, goal_n = (40,6)
+        goal_m, goal_n = GOALS[current_goal_idx]
+
 
         walls = im[:,:,0] > 0.25
         # no_doors = im[:,:,1] * walls > 0.25
@@ -301,7 +336,7 @@ def robot_code(clientID, verbose=False):
 
         # Objects repulsion should be inverse of distance
         # Small Distances should be very high repulsion
-        k_repulse = 1000.0
+        k_repulse = 100
         def force_repulsion(k_repulse, rho, rho_0):
             """
             k_repulse: positive scaling factor
@@ -313,15 +348,13 @@ def robot_code(clientID, verbose=False):
             else:
                 return 0
         # repulsionVectors = [np.array(pol2cart(k_repulse/(val - 0.75)**2, angle)) for val, angle in zip(lidarValues, lidarAngles)]
-        repulsionVectors = np.vstack([np.array(pol2cart(force_repulsion(k_repulse, val, 3), angle)) for val, angle in zip(lidarValues, lidarAngles)])
+        repulsionVectors = np.vstack([np.array(pol2cart(force_repulsion(k_repulse, val, 5), angle)) for val, angle in zip(lidarValues, lidarAngles)])
         attractionVal, attractionAngle = cart2pol(
             goal_n - n, # cols counts same     to normal horz axes
             m - goal_m  # rows counts opposite to normal vert axes
         )
-        # Objects attraction should be inverse proportional to distance
-        # Small Distances should be very high attraction
-        k_attract = 1000.0
-        attractionVector = np.array(pol2cart(k_attract/attractionVal, attractionAngle))
+        k_attract = 100
+        attractionVector = np.array(pol2cart(k_attract*attractionVal, attractionAngle))
 
         # print np.vstack((repulsionVectors, attractionVector))
         finalVector = np.sum(np.vstack((repulsionVectors, attractionVector)),   axis=0)
@@ -337,16 +370,29 @@ def robot_code(clientID, verbose=False):
         # you want to turn left, which is equivalent to omega > 0
         # so, omega = theta1 - theta0 > 0
         # and vice versa
-        delta_theta = mapTheta2worldTheta(finalAngle, worldNorthTheta) - theta
+        delta_theta = angle_diff(mapTheta2worldTheta(finalAngle, worldNorthTheta), theta)
         omega = k_angular * delta_theta
         print "Omega: ", round(omega,1)
 
-        g = 1
-        print "distance_from_goal: ", distance_from_goal[m,n]
-        if distance_from_goal[m,n] == 1:
-            forward_vel = 0
-        else:
+        # Direct yourself to the goal
+        goal_theta_diff = angle_diff(mapTheta2worldTheta(attractionAngle, worldNorthTheta),theta)
+        print "Angle Diff ", goal_theta_diff
+        if abs(goal_theta_diff) > 0.1: # episilon
+            print "Fuck that"
             forward_vel = 1.0
+            # # turn stationary
+            # forward_vel = 0
+            # omega *= 3
+            print "distance_from_goal: ", distance_from_goal[m,n]
+        else:
+            print "distance_from_goal: ", distance_from_goal[m,n]
+            if distance_from_goal[m,n] == 1:
+                # Achieved Goal!
+                forward_vel = 0
+                current_goal_idx += 1
+            else:
+                forward_vel = 1.0
+        g = 1
 
         # if np.abs(omega - 0) < 0.2:
         #     forward_vel = 0.5
