@@ -222,6 +222,17 @@ def pseudoLidarSensor(paths, m, n, fr, original_four):
 
     return lidarValues
 
+def cart2pol(x, y):
+    rho = np.sqrt(x**2 + y**2)
+    phi = np.arctan2(y, x)
+    return(rho, phi)
+
+def pol2cart(rho, phi):
+    """ where rho is the Radius, and phi is the angle """
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return(x, y)
+
 def best_theta_map(paths, pathTowardsGoal, m, n, fr, original_four):
     if original_four:
         cardinal_dir = pseudoLidarSensor(paths, m, n, fr, original_four)
@@ -243,6 +254,7 @@ def best_theta_map(paths, pathTowardsGoal, m, n, fr, original_four):
         theta_map = np.pi / 4 * np.argmax(cardinal_dir)
     print cardinal_dir
     return theta_map
+
 
 def robot_code(clientID, verbose=False):
     # initialize ePuck handles and variables
@@ -326,9 +338,29 @@ def robot_code(clientID, verbose=False):
                 distance_from_goal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
         pathTowardsGoal = (paths * 255) - distance_from_goal
 
-        # use "cardinal direction firing" technique to determine which cardinal direction is best
-        window_size = 20
+        window_size = 21           # odd
         fr = (window_size - 1) / 2 # fire range
+        lidarValues = pseudoLidarSensor(paths, m, n, fr, original_four=True)
+
+
+        # Potential Field Algorithm
+        numLidarValues = len(lidarValues)
+        lidarAngles = [np.pi / numLidarValues * index for index in range(numLidarValues)]
+
+        # Objects repulsion should be inverse of distance
+        # Small Distances should be very high repulsion
+        repulsionVectors = [np.array(pol2cart(1.0/val**2, angle)) for val, angle in zip(lidarValues, lidarAngles)]
+
+        attractionVal, attractionAngle = cart2pol(
+            goal_n - n, # cols counts same     to normal horz axes
+            m - goal_m  # rows counts opposite to normal vert axes
+        )
+        # Objects attraction should be inverse proportional to distance
+        # Small Distances should be very high attraction
+        attractionVector = np.array(pol2cart(1.0/attractionVal**2, attractionAngle))
+
+        finalVector = np.sum(np.vstack((repulsionVectors, attractionVector)), axis=0)
+        print "finalVector: ", finalVector
         theta_map = best_theta_map(paths, pathTowardsGoal, m, n, fr, original_four=True)
 
         # calculate desired heading
