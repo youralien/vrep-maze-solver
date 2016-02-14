@@ -341,15 +341,18 @@ def robot_code(clientID, verbose=False):
         window_size = 21           # odd
         fr = (window_size - 1) / 2 # fire range
         lidarValues = pseudoLidarSensor(paths, m, n, fr, original_four=True)
+        print "lidarValues =", lidarValues
 
-
-        # Potential Field Algorithm
+        #############################
+        # Potential Field Algorithm #
+        #############################
         numLidarValues = len(lidarValues)
         lidarAngles = [np.pi / numLidarValues * index for index in range(numLidarValues)]
 
         # Objects repulsion should be inverse of distance
         # Small Distances should be very high repulsion
-        repulsionVectors = [np.array(pol2cart(1.0/val**2, angle)) for val, angle in zip(lidarValues, lidarAngles)]
+        k_repulse = 1.0
+        repulsionVectors = [np.array(pol2cart(k_repulse/val**2, angle)) for val, angle in zip(lidarValues, lidarAngles)]
 
         attractionVal, attractionAngle = cart2pol(
             goal_n - n, # cols counts same     to normal horz axes
@@ -357,25 +360,28 @@ def robot_code(clientID, verbose=False):
         )
         # Objects attraction should be inverse proportional to distance
         # Small Distances should be very high attraction
-        attractionVector = np.array(pol2cart(1.0/attractionVal**2, attractionAngle))
+        k_attract = 3.0
+        attractionVector = np.array(pol2cart(k_attract/attractionVal, attractionAngle))
 
         finalVector = np.sum(np.vstack((repulsionVectors, attractionVector)), axis=0)
         print "finalVector: ", finalVector
-        theta_map = best_theta_map(paths, pathTowardsGoal, m, n, fr, original_four=True)
+        finalValue, finalAngle = cart2pol(finalVector[0], finalVector[1])
+        print "finalVal, finalAngle: ", (finalValue, finalAngle*180/np.pi)
 
-        # calculate desired heading
+        # the finalAngle should be in map coordinates
+        theta_map = finalAngle
         theta_map -= np.pi / 2 # east should be - np / 2
 
         # proportional control on angular velocity
         k_angular = 0.75
-        theta += np.pi / 2
+        theta += np.pi / 2 # lets turn vrep coordinates into sensible odom coordinates
         # headings are all flipped, based on experience in the simulator
         delta_theta = theta - theta_map
         print(theta*180/np.pi, theta_map*180/np.pi, round(delta_theta,2))
         omega = k_angular * delta_theta
 
         # constant motor control for now
-        v = 0.5
+        v = 0.1
         g = 1
 
         # control the motors
@@ -389,9 +395,9 @@ def robot_code(clientID, verbose=False):
         # plt.imshow(no_doors)
         # plt.imshow(blurred_map)
         # plt.imshow(paths)
-        pathTowardsGoal[m,n] = 0
-        plt.imshow(pathTowardsGoal)
-        plt.pause(0.1)
+        # pathTowardsGoal[m,n] = 0
+        # plt.imshow(pathTowardsGoal)
+        # plt.pause(0.1)
         time.sleep(0.05) #sleep 50ms
 
 """
