@@ -162,7 +162,7 @@ def vomega2bytecodes(v, omega, g, L=0.216):
     ctrl_sig_right = (v_comm + v_diff) / float(g)
     return ctrl_sig_left, ctrl_sig_right
 
-class Util(object):
+class ThetaRange(object):
     @staticmethod
     def normalize_angle_pos(angle):
         return ((angle % (2*np.pi)) + 2*np.pi) % (2*np.pi)
@@ -170,20 +170,10 @@ class Util(object):
     @staticmethod
     def normalize_angle(angle):
         """ Constrains the angles to the range [0, pi) U [-pi, 0) """
-        a = Util.normalize_angle_pos(angle)
-        if a > np.pi:
+        a = ThetaRange.normalize_angle_pos(angle)
+        if a >= np.pi:
             a -= 2*np.pi
         return a
-
-        hit_wall = False
-        count = 1
-        east = 0
-        while (not hit_wall and count <= fr):
-            if paths[m,n+count] == False:
-                hit_wall = True
-            else:
-                east += pathTowardsGoal[m,n+count]
-                count += 1
 
 def ray_trace(paths, m, n, fr, compute_next_cell):
     """
@@ -233,6 +223,47 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
+def mapTheta2worldTheta(mapTheta, northTheta):
+    """ converts the mapTheta where
+
+    mapTheta = 0 is "east"
+    mapTheta = pi / 2 is "north"
+    and mapTheta defined on [0, 2*np.pi)
+
+    to the worldTheta, where
+    "north" is given by northTheta
+    and worldTheta defined on [0, pi) U [-pi, 0) """
+
+    # to convert mapTheta pi/2 which is north, to northTheta, we have to do add a bias
+    bias = northTheta - np.pi / 2
+
+    worldTheta = ThetaRange.normalize_angle(mapTheta + bias)
+    return worldTheta
+
+def test_mapTheta2worldTheta():
+    """ if north Theta given by 0 ..."""
+    northTheta = 0
+    # east
+    assert (mapTheta2worldTheta(0, northTheta) == -np.pi / 2)
+    # north
+    assert (mapTheta2worldTheta(1*np.pi/2, northTheta) == 0)
+    # west
+    assert (mapTheta2worldTheta(2*np.pi/2, northTheta) == np.pi / 2)
+    # south
+    assert (mapTheta2worldTheta(3*np.pi/2, northTheta) == -np.pi)
+
+    # northTheta = -np.pi / 2
+    # # east
+    # assert (mapTheta2worldTheta(0, northTheta) == -np.pi / 2)
+    # # north
+    # assert (mapTheta2worldTheta(1*np.pi/2, northTheta) == 0)
+    # # west
+    # assert (mapTheta2worldTheta(2*np.pi/2, northTheta) == np.pi / 2)
+    # # south
+    # assert (mapTheta2worldTheta(3*np.pi/2, northTheta) == -np.pi)
+
+test_mapTheta2worldTheta()
+
 def best_theta_map(paths, pathTowardsGoal, m, n, fr, original_four):
     if original_four:
         cardinal_dir = pseudoLidarSensor(paths, m, n, fr, original_four)
@@ -278,7 +309,7 @@ def robot_code(clientID, verbose=False):
         clientID, ePuck, -1, vrep.simx_opmode_streaming)
     _, eulerAngles = vrep.simxGetObjectOrientation(
         clientID, ePuck, -1, vrep.simx_opmode_streaming)
-
+    # NOTE: this assumes that simulation and this code is started roughly the same time
 
     # initialize overhead cam
     _, overheadCam=vrep.simxGetObjectHandle(
@@ -298,6 +329,7 @@ def robot_code(clientID, verbose=False):
     _ = vrep.simxSetJointTargetVelocity(
         clientID,rightMotor,0,vrep.simx_opmode_oneshot_wait)
 
+    worldNorthTheta = None
     t = time.time()
     while (time.time() - t) < 100:
         if verbose: print "Time Elapsed = ", time.time() - t;
@@ -315,6 +347,11 @@ def robot_code(clientID, verbose=False):
             clientID, ePuck, -1, vrep.simx_opmode_buffer)
         x, y, z = xyz
         theta = eulerAngles[2]
+
+        # initialize worldNorthTheta for the first time
+        if worldNorthTheta is None:
+            worldNorthTheta = theta
+
         map_side_length = 2.55
         m, n = odom2pixelmap(x, y, map_side_length, im.shape[0])
         # acquire pixel location of goal
@@ -346,6 +383,9 @@ def robot_code(clientID, verbose=False):
         #############################
         # Potential Field Algorithm #
         #############################
+        # constant motor control for now
+        forward_vel = 0.5
+
         numLidarValues = len(lidarValues)
         lidarAngles = [np.pi / numLidarValues * index for index in range(numLidarValues)]
 
@@ -360,7 +400,7 @@ def robot_code(clientID, verbose=False):
         )
         # Objects attraction should be inverse proportional to distance
         # Small Distances should be very high attraction
-        k_attract = 3.0
+        k_attract = 2.0
         attractionVector = np.array(pol2cart(k_attract/attractionVal, attractionAngle))
 
         finalVector = np.sum(np.vstack((repulsionVectors, attractionVector)), axis=0)
@@ -368,24 +408,21 @@ def robot_code(clientID, verbose=False):
         finalValue, finalAngle = cart2pol(finalVector[0], finalVector[1])
         print "finalVal, finalAngle: ", (finalValue, finalAngle*180/np.pi)
 
-        # the finalAngle should be in map coordinates
-        theta_map = finalAngle
-        theta_map -= np.pi / 2 # east should be - np / 2
-
         # proportional control on angular velocity
-        k_angular = 0.75
-        theta += np.pi / 2 # lets turn vrep coordinates into sensible odom coordinates
-        # headings are all flipped, based on experience in the simulator
-        delta_theta = theta - theta_map
-        print(theta*180/np.pi, theta_map*180/np.pi, round(delta_theta,2))
+        k_angular = 0.25
+        # if you are at theta0, and you want to move to theta1, there is two cases
+        # case1: theta1 > theta0
+        # you want to turn left, which is equivalent to omega > 0
+        # so, omega = theta1 - theta0 > 0
+        # and vice versa
+        delta_theta = mapTheta2worldTheta(finalAngle, worldNorthTheta) - theta
         omega = k_angular * delta_theta
+        print "Omega: ", round(omega,1)
 
-        # constant motor control for now
-        v = 0.1
         g = 1
 
         # control the motors
-        ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(v, omega, g)
+        ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(forward_vel, omega, g)
         _ = vrep.simxSetJointTargetVelocity(
             clientID,leftMotor,ctrl_sig_left,vrep.simx_opmode_oneshot_wait) # set left wheel velocity
         _ = vrep.simxSetJointTargetVelocity(
