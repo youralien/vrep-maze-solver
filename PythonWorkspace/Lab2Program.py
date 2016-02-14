@@ -25,76 +25,6 @@ def format_vrep_image(resolution, image):
 def image_vert_flip(im):
     return im[::-1,:,:]
 
-def threshold_for_red(im):
-    RED_CHANNEL = 0
-    thresh_im = im[:,:,RED_CHANNEL] > 150 # where the red channel is pretty red
-    return thresh_im
-
-def find_object_center(binary_image):
-    """
-    Parameters
-    ----------
-    binary_image: numpy array, shape (m,n)
-
-    Returns
-    -------
-    center_x, center_y: the location of the center as integer.  If None, then it didn't find the center
-    """
-    if np.any(binary_image):
-        height, width = binary_image.shape
-
-        # horizontal histogram has counts of white pixels in a column, where indexes represent columns
-        horzhist = np.zeros(width)
-        for col in range(width):
-            horzhist[col] = np.sum(binary_image[:,col])
-        # get column which had the most white pixels (that would be the center of a ball)
-        center_x = np.argmax(horzhist)
-
-        verthist = np.zeros(height)
-        for row in range(height):
-            verthist[row] = np.sum(binary_image[row, :])
-        # get row which had the most white pixels (that would be the center of a ball)
-        center_y = np.argmax(verthist)
-
-        return center_x, center_y
-    else:
-        return None, None
-
-def find_how_close(binary_image):
-    return float(np.sum(binary_image)) / np.dot(*binary_image.shape)
-
-def calculateWheelVelocities(how_much_to_turn, how_close = 0, k_turn=0.025, k_forward=0.5):
-    """ calculates right and left wheel velocities given how much to turn (ball horizontal position)
-    and how fast to go (how close is the ball?)
-
-    Parameters
-    ----------
-    how_much_to_turn:
-        if large and positive, turn right sharply
-        if large and negative, turn left sharply
-
-    how_close:
-        if small, go faster and catch up to ball
-        if large, go slower because the ball is pretty close
-
-    Returns: vl, vr
-    """
-    how_fast_to_go = 1.0 / how_close
-    vl = float(k_turn) * how_much_to_turn + float(k_forward) * how_fast_to_go
-    vr = - float(k_turn) * how_much_to_turn + float(k_forward) * how_fast_to_go
-    return vl, vr
-
-def testWheelVel():
-    norm_center_xs = np.linspace(0, 1, 10)
-    turns = norm_center_xs - 0.5
-    print turns
-    for how_much_to_turn in turns:
-        how_fast_to_go = 100
-        vl, vr = calculateWheelVelocities(
-            how_much_to_turn, how_fast_to_go,
-            k_turn=100, k_forward=0.3)
-        print vl, vr
-
 def prox_sens_initialize(clientID):
     """ Initialize proximity sensor. Maybe helpful later """
     proxSens=[]
@@ -110,6 +40,7 @@ def prox_sens_read(clientID, proxSens):
     """
     outputs = []
     keys = ('returnCode','detectionState','detectedPoint','detectedObjectHandle','detectedSurfaceNormalVector')
+    # NOTE: take norm of deteected point to get the distance
     for i in range(8):
         proxOut=vrep.simxReadProximitySensor(clientID, proxSens[i], vrep.simx_opmode_streaming)
         outputs.append(dict(zip(keys, proxOut)))
@@ -196,19 +127,32 @@ def ray_trace(paths, m, n, fr, compute_next_cell):
 def pseudoLidarSensor(paths, m, n, fr, original_four):
 
     if original_four:
+        functions = [
+            lambda m, n, count: (m, n+count),
+            lambda m, n, count: (m-count, n),
+            lambda m, n, count: (m, n-count),
+            lambda m, n, count: (m+count, n)
+        ]
         lidarValues = [
-            ray_trace(paths, m, n, fr,
-                lambda m, n, count: (m, n+count)),
-            ray_trace(paths, m, n, fr,
-                lambda m, n, count: (m-count, n)),
-            ray_trace(paths, m, n, fr,
-                lambda m, n, count: (m, n-count)),
-            ray_trace(paths, m, n, fr,
-                lambda m, n, count: (m+count, n))
+            ray_trace(paths, m, n, fr, func)
+            for func in functions
         ]
 
     else:
-        print("No support for more than 4 lidar directions for now")
+        functions = [
+            lambda m, n, count: (m, n+count),
+            lambda m, n, count: (m-count,n+count),
+            lambda m, n, count: (m-count, n),
+            lambda m, n, count: (m-count,n-count),
+            lambda m, n, count: (m, n-count),
+            lambda m, n, count: (m+count,n-count),
+            lambda m, n, count: (m+count, n),
+            lambda m, n, count: (m+count,n+count)
+        ]
+        lidarValues = [
+            ray_trace(paths, m, n, fr, func)
+            for func in functions
+        ]
 
     return lidarValues
 
@@ -252,40 +196,7 @@ def test_mapTheta2worldTheta():
     # south
     assert (mapTheta2worldTheta(3*np.pi/2, northTheta) == -np.pi)
 
-    # northTheta = -np.pi / 2
-    # # east
-    # assert (mapTheta2worldTheta(0, northTheta) == -np.pi / 2)
-    # # north
-    # assert (mapTheta2worldTheta(1*np.pi/2, northTheta) == 0)
-    # # west
-    # assert (mapTheta2worldTheta(2*np.pi/2, northTheta) == np.pi / 2)
-    # # south
-    # assert (mapTheta2worldTheta(3*np.pi/2, northTheta) == -np.pi)
-
 test_mapTheta2worldTheta()
-
-def best_theta_map(paths, pathTowardsGoal, m, n, fr, original_four):
-    if original_four:
-        cardinal_dir = pseudoLidarSensor(paths, m, n, fr, original_four)
-        theta_map = np.pi / 2 * np.argmax(cardinal_dir)
-    else:
-        northeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n,n+fr))
-        northwest_idx = (np.arange(m,m+fr)       , np.arange(n,n+fr))
-        southwest_idx = (np.arange(m,m+fr)       , np.arange(n-1,n-fr-1,-1))
-        southeast_idx = (np.arange(m-1,m-fr-1,-1), np.arange(n-1,n-fr-1,-1))
-        east      = np.sum(pathTowardsGoal[m        ,n   :n+fr])
-        northeast = np.sum(pathTowardsGoal[northeast_idx])
-        north     = np.sum(pathTowardsGoal[m-fr:m   ,n  ])
-        northwest = np.sum(pathTowardsGoal[northwest_idx])
-        west      = np.sum(pathTowardsGoal[m,n-fr:n   ])
-        southwest = np.sum(pathTowardsGoal[southwest_idx])
-        south     = np.sum(pathTowardsGoal[m   :m+fr,n  ])
-        southeast = np.sum(pathTowardsGoal[southeast_idx])
-        cardinal_dir = np.array([east, northeast, north, northwest, west, southwest, south, southeast]) # matching unit circle
-        theta_map = np.pi / 4 * np.argmax(cardinal_dir)
-    print cardinal_dir
-    return theta_map
-
 
 def robot_code(clientID, verbose=False):
     # initialize ePuck handles and variables
@@ -299,10 +210,7 @@ def robot_code(clientID, verbose=False):
         clientID, 'ePuck', vrep.simx_opmode_oneshot_wait)
     _, ePuckBase=vrep.simxGetObjectHandle(
         clientID, 'ePuck_base', vrep.simx_opmode_oneshot_wait)
-    proxSens = prox_sens_initialize(clientID)
-    maxVel=120*np.pi/180
-    velLeft=0
-    velRight=0
+    # proxSens = prox_sens_initialize(clientID)
     # initialize odom of ePuck
     # FIXME: xyz is not a pose. xytheta is.
     _, xyz = vrep.simxGetObjectPosition(
@@ -362,7 +270,7 @@ def robot_code(clientID, verbose=False):
         goal_m, goal_n = (58,48)
 
         walls = im[:,:,0] > 0.25
-        no_doors = im[:,:,1] * walls > 0.25
+        # no_doors = im[:,:,1] * walls > 0.25
         blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
         paths = blurred_map < 0.15
 
@@ -375,11 +283,10 @@ def robot_code(clientID, verbose=False):
             for col in range(im.shape[1]):
                 current_pixel_vector = np.array([row, col])
                 distance_from_goal[row,col] = cityblock(goal_pixel_vector, current_pixel_vector)
-        pathTowardsGoal = (paths * 255) - distance_from_goal
 
         window_size = 21           # odd
         fr = (window_size - 1) / 2 # fire range
-        lidarValues = pseudoLidarSensor(paths, m, n, fr, original_four=True)
+        lidarValues = pseudoLidarSensor(paths, m, n, fr, original_four=False)
         print "lidarValues =", lidarValues
 
         #############################
@@ -454,70 +361,6 @@ def robot_code(clientID, verbose=False):
         plt.imshow(im)
         plt.pause(0.1)
         time.sleep(0.05) #sleep 50ms
-
-"""
-    #initialize variables
-    ErrorCode = 0
-    LeftVelocity = 150
-    RightVelocity = 100
-
-    #Get motor handles
-    ErrorCode, LeftJointHandle = vrep.simxGetObjectHandle(clientID,'dr12_leftJoint_',vrep.simx_opmode_oneshot_wait)  #Left motor
-    ErrorCode, RightJointHandle = vrep.simxGetObjectHandle(clientID,'dr12_rightJoint_',vrep.simx_opmode_oneshot_wait) #Right motor
-
-    #Get bumper handles
-    ErrorCode, BumperSensorHandle = vrep.simxGetObjectHandle(clientID,'dr12_bumperForceSensor_',vrep.simx_opmode_oneshot_wait) #Bumper
-    ErrorCode, state, forceVector, torqueVector = vrep.simxReadForceSensor(clientID, BumperSensorHandle,vrep.simx_opmode_streaming) #Get bumper force reading, first run
-    ErrorCode, state, forceVector, torqueVector = vrep.simxReadForceSensor(clientID, BumperSensorHandle,vrep.simx_opmode_streaming) #Get bumper force reading, first run
-
-    #Get camera handles
-    ErrorCode, CamHandle = vrep.simxGetObjectHandle(clientID,'VisionSensor',vrep.simx_opmode_oneshot_wait); #Camera
-    ErrorCode, resolution, image = vrep.simxGetVisionSensorImage(clientID,CamHandle,0,vrep.simx_opmode_oneshot_wait); #Get image, first run
-
-    # Plotting
-    fig, axes = plt.subplots(2, 1)
-
-    t = time.time()
-    #vrep.simxPauseSimulation(clientID,vrep.simx_opmode_oneshot) #Pause simulation, allow longer computation time without simulation running
-    #vrep.simxStartSimulation(clientID,vrep.simx_opmode_oneshot) #Resume simulation
-    while (time.time()-t)<1000:
-        remaining = time.time()-t
-        # print "Time Remaining=", remaining
-        ErrorCode,resolution,image = vrep.simxGetVisionSensorImage(clientID,CamHandle,0,vrep.simx_opmode_oneshot_wait) # Get image
-        ErrorCode, state, forceVector, torqueVector = vrep.simxReadForceSensor(clientID, BumperSensorHandle,vrep.simx_opmode_buffer) # Get bumper force reading
-
-        # Processing Image
-        im = format_vrep_image(resolution, image) # original image
-        thresh_im = threshold_for_red(im) # threhold binary image
-        center_x, center_y = find_object_center(thresh_im)
-
-        if center_x and center_y:
-            norm_center_x = float(center_x) / resolution[0]
-
-            # P control: The normalized center of screen is 0.5
-            how_much_to_turn = (norm_center_x - 0.5)
-
-            percent_of_picture_is_ball = find_how_close(thresh_im)
-
-            if percent_of_picture_is_ball > 0.1:
-                vl, vr = calculateWheelVelocities(
-                    how_much_to_turn, percent_of_picture_is_ball,
-                    k_turn=100, k_forward=0)
-            else:
-                vl, vr = calculateWheelVelocities(
-                    how_much_to_turn, percent_of_picture_is_ball,
-                    k_turn=100, k_forward=5)
-        else:
-            vl, vr = 0,0
-
-        ErrorCode = vrep.simxSetJointTargetVelocity(clientID,LeftJointHandle,vl*math.pi/180,vrep.simx_opmode_oneshot_wait) #set Left wheel speed
-        ErrorCode = vrep.simxSetJointTargetVelocity(clientID,RightJointHandle,vr*math.pi/180,vrep.simx_opmode_oneshot_wait) #set Left wheel speed
-
-        #Set Drive to robot
-        time.sleep(0.05) #sleep 50ms
-    ErrorCode = vrep.simxSetJointTargetVelocity(clientID,LeftJointHandle,0,vrep.simx_opmode_oneshot_wait) #stop motor
-    ErrorCode = vrep.simxSetJointTargetVelocity(clientID,RightJointHandle,0,vrep.simx_opmode_oneshot_wait) #stop motor
-"""
 
 def main():
     #Initialisation for Python to connect to VREP
