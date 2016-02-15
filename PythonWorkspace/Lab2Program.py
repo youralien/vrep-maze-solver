@@ -267,6 +267,38 @@ def test_mapTheta2worldTheta():
 
 # test_mapTheta2worldTheta()
 
+def worldTheta2mapTheta(worldTheta, northTheta):
+    # to convert mapTheta pi/2 which is north, to northTheta, we have to do add a bias
+    bias = ThetaRange.normalize_angle(northTheta - np.pi / 2)
+
+    worldTheta = ThetaRange.normalize_angle(worldTheta - bias)
+    return worldTheta
+
+def test_worldTheta2mapTheta():
+    """ if north Theta given by 0 ..."""
+    northTheta = 0
+    # east
+    print worldTheta2mapTheta(-np.pi / 2, northTheta)
+    assert ThetaRange.normalize_angle(0) == worldTheta2mapTheta(-np.pi / 2, northTheta)
+    # north
+    assert ThetaRange.normalize_angle(1*np.pi/2) == worldTheta2mapTheta(0, northTheta)
+    # west
+    assert ThetaRange.normalize_angle(2*np.pi/2) == worldTheta2mapTheta(np.pi / 2, northTheta)
+    # south
+    assert ThetaRange.normalize_angle(3*np.pi/2) == worldTheta2mapTheta(-np.pi, northTheta)
+
+    northTheta = -np.pi / 2
+    # east
+    assert ThetaRange.normalize_angle(0) == worldTheta2mapTheta(-np.pi, northTheta)
+    # north
+    assert ThetaRange.normalize_angle(1*np.pi/2) == worldTheta2mapTheta(-np.pi / 2, northTheta)
+    # west
+    assert ThetaRange.normalize_angle(2*np.pi/2) ==worldTheta2mapTheta(0, northTheta)
+    # south
+    assert ThetaRange.normalize_angle(3*np.pi/2) == worldTheta2mapTheta(np.pi / 2, northTheta)
+
+# test_worldTheta2mapTheta()
+
 def force_repulsion(k_repulse, rho, rho_0):
     """
     k_repulse: positive scaling factor
@@ -457,7 +489,6 @@ class Lab2Program:
             # TODO: do we use the unit vector (for direction) only, or the finalVector?
             finalValue, finalAngle = cart2pol(finalUnitVector[0], finalUnitVector[1])
 
-
             error_theta = angle_diff(mapTheta2worldTheta(finalAngle, self.worldNorthTheta), theta)
 
             # P control angular
@@ -499,7 +530,7 @@ class Lab2Program:
             plt.subplot(2,1,2)
             plt.cla() # clear axis
             self.plot_unit_quiver(finalUnitVector, 'r')
-            self.plot_unit_quiver(pol2cart(1, theta), 'k')
+            self.plot_unit_quiver(pol2cart(1, worldTheta2mapTheta(theta, self.worldNorthTheta)), 'k')
             plt.pause(0.05) # sleep 50ms and animate
 
             if self.killer.kill_now:
