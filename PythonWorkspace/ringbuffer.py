@@ -26,27 +26,25 @@ class RingBuffer():
         idx = (self.index + np.arange(self.data.size)) %self.data.size
         return self.data[idx]
 
-    def weighted_average(self, scheme):
+    def weighted_average(self, scheme, mathfunc=lambda x: x):
         "choose from same, no weighting"
         if scheme == 'same':
             self.weights = np.ones(self.data.size)
         elif scheme == "last":
             for idx, weight in enumerate(range(1, self.data.size + 1)):
-                self.weights[(self.index + idx) % self.data.size] = weight
-        elif scheme == "lastsquared":
-            for idx, weight in enumerate(range(1, self.data.size + 1)):
-                self.weights[(self.index + idx) % self.data.size] = weight ** 2
+                self.weights[(self.index + idx) % self.data.size] = mathfunc(weight)
 
         return np.sum(self.data * self.weights) / np.sum(self.weights)
 
     def __len__(self):
         return self.data.size
 
-    def ordered_data(self):
-        return np.array([
-            self.data[count % self.data.size]
-            for count in range(self.index, self.index + self.data.size)
-        ])
+    def __iter__(self):
+        for count in range(self.index, self.index + self.data.size):
+            yield self.data[count % self.data.size]
+
+    def __getitem__(self, idx):
+        return self.data[idx % self.data.size]
 
 if __name__ == '__main__':
     rb = RingBuffer(5)
@@ -56,5 +54,5 @@ if __name__ == '__main__':
         rb.append(i)
         print rb.index % rb.data.size, rb.data, rb.weighted_average('same'), rb.weighted_average('last'), rb.weighted_average('lastsquared')
 
-    for count in range(rb.index, rb.index + rb.data.size):
-        print rb.data[count % rb.data.size]
+    for elem in rb:
+        print elem
