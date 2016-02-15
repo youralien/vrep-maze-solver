@@ -500,11 +500,15 @@ class Lab2Program:
             error_theta = angle_diff(mapTheta2worldTheta(finalAngle, self.worldNorthTheta), theta)
             self.e_theta_h.append(error_theta)
 
-            k_angular_p = 3.0 * self.maxVelocity
-            k_angular_TD = 3.0
-            k_angular_TS = 1.0
-            # omega = k_angular * error_theta
-            omega = k_angular_p * (error_theta + k_angular_TD / k_angular_TS * (self.e_theta_h[-1] - self.e_theta_h[-2]))
+            k_angular_p = 2.0 * self.maxVelocity
+            k_angular_D = 0.25
+            k_angular_S = 1.0
+            k_angular_I = 2.5
+            omega = k_angular_p * (
+                  error_theta
+                + k_angular_D / k_angular_S * (self.e_theta_h[-1] - self.e_theta_h[-2])
+                + k_angular_S / k_angular_I * sum(self.e_theta_h)
+            )
             print "Omega: ", round(omega,1)
 
             #############################
