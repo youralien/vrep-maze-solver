@@ -17,6 +17,8 @@ from scipy.spatial.distance import cityblock
 import signal
 import sys
 
+from idash import IDash
+
 # interactive plotting
 plt.ion()
 
@@ -337,7 +339,7 @@ class Lab2Program:
         self.initilize_vrep_api()
         self.define_constants()
         self.killer = GracefulKiller()
-        plt.figure(figsize=self.figsize)
+        self.idash = IDash(n_axes=3, framerate=0.05)
 
     def initialize_vrep_client(self):
         #Initialisation for Python to connect to VREP
@@ -401,7 +403,7 @@ class Lab2Program:
         self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
         self.worldNorthTheta = None
         self.maxVelocity = 1.0
-        self.figsize = (4,8)
+        self.theta_history = []
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -424,6 +426,7 @@ class Lab2Program:
             self.clientID, self.ePuck, -1, vrep.simx_opmode_buffer)
         x, y, z = xyz
         theta = eulerAngles[2]
+        self.theta_history.append(theta)
 
         return (x, y, theta)
 
@@ -524,14 +527,23 @@ class Lab2Program:
             # plt.imshow(blurred_map)
             # plt.imshow(paths)
 
-            fig = plt.gcf()
-            plt.subplot(2,1,1)
-            self.plot_maze(im, m, n, goal_m, goal_n)
-            plt.subplot(2,1,2)
-            plt.cla() # clear axis
-            self.plot_unit_quiver(finalUnitVector, 'r')
-            self.plot_unit_quiver(pol2cart(1, worldTheta2mapTheta(theta, self.worldNorthTheta)), 'k')
-            plt.pause(0.05) # sleep 50ms and animate
+
+            self.idash.add(lambda: self.plot_maze(im, m, n, goal_m, goal_n))
+            def plot_current_and_desired_heading():
+                self.plot_unit_quiver(finalUnitVector, 'r')
+                self.plot_unit_quiver(pol2cart(1, worldTheta2mapTheta(theta, self.worldNorthTheta)), 'k')
+            self.idash.add(plot_current_and_desired_heading)
+            self.idash.add(self.plot_theta_history)
+
+            self.idash.plotframe()
+            # fig = plt.gcf()
+            # plt.subplot(2,1,1)
+            # self.plot_maze(im, m, n, goal_m, goal_n)
+            # plt.subplot(2,1,2)
+            # plt.cla() # clear axis
+            # self.plot_unit_quiver(finalUnitVector, 'r')
+            # self.plot_unit_quiver(pol2cart(1, worldTheta2mapTheta(theta, self.worldNorthTheta)), 'k')
+            # plt.pause(0.05) # sleep 50ms and animate
 
             if self.killer.kill_now:
                 self.clean_exit()
@@ -548,6 +560,15 @@ class Lab2Program:
         plt.quiver(X,Y,U,V,angles='xy',scale_units='xy',scale=1,color=color)
         plt.xlim([-1.1,1.1])
         plt.ylim([-1.1,1.1])
+
+    def plot_theta_history(self):
+        plt.plot(self.theta_history)
+        if len(self.theta_history) < 5:
+            plt.xlim([0, 5])
+        else:
+            plt.xlim([0, len(self.theta_history)])
+        ylim = np.pi + 0.5
+        plt.ylim([-ylim, ylim])
 
     def plot_all_goals(self, im):
         # display all goals
