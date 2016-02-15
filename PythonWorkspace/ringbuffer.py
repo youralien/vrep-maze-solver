@@ -46,6 +46,9 @@ class RingBuffer():
     def __getitem__(self, idx):
         return self.data[idx % self.data.size]
 
+    def __sum__(self):
+        return np.sum(self.data)
+
 if __name__ == '__main__':
     rb = RingBuffer(5)
 
