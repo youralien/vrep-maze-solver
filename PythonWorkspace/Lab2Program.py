@@ -406,6 +406,7 @@ class Lab2Program:
         self.maxVelocity = 1.0
         self.history_length = 5
         self.theta_history = RingBuffer(self.history_length)
+        self.e_theta_h = RingBuffer(self.history_length)
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -465,8 +466,8 @@ class Lab2Program:
             im = self.global_map_preprocess(resolution, image)
 
             self.pose = self.robot_pose_get()
-            x, y, _ = self.pose
-            theta = self.theta_history.weighted_average('last')
+            x, y, theta = self.pose
+            # theta = self.theta_history.weighted_average(scheme='last', mathfunc=lambda x: np.exp(x))
 
             # initialize worldNorthTheta for the first time
             if self.worldNorthTheta is None:
@@ -497,27 +498,33 @@ class Lab2Program:
             finalValue, finalAngle = cart2pol(finalUnitVector[0], finalUnitVector[1])
 
             error_theta = angle_diff(mapTheta2worldTheta(finalAngle, self.worldNorthTheta), theta)
+            self.e_theta_h.append(error_theta)
 
-            # P control angular
-            k_angular = 3.0 * self.maxVelocity
-            omega = k_angular * error_theta
+            k_angular_p = 3.0 * self.maxVelocity
+            k_angular_TD = 3.0
+            k_angular_TS = 1.0
+            # omega = k_angular * error_theta
+            omega = k_angular_p * (error_theta + k_angular_TD / k_angular_TS * (self.e_theta_h[-1] - self.e_theta_h[-2]))
             print "Omega: ", round(omega,1)
 
-            # if desired heading is directly in front
-            if np.abs(error_theta) > np.pi / 4:
+            #############################
+            # StateController Algorithm #
+            #############################
+            # if desired heading is not directly in front
+            if np.abs(error_theta) > np.pi / 3:
                 # turn in place
                 forward_vel = 0
                 # omega *= 0.25
-
-            # Direct yourself to the goal
-            goal_distance = np.linalg.norm(self.goal_pose_pixel - self.pose_pixel)
-            print "distance_from_goal: ", goal_distance
-            if goal_distance <= 4:
-                # Achieved Goal!
-                forward_vel = self.maxVelocity * 0.25 # Slow down to prepare for the next one
-                self.curr_goal += 1
             else:
-                forward_vel = self.maxVelocity
+                # Direct yourself to the goal
+                goal_distance = np.linalg.norm(self.goal_pose_pixel - self.pose_pixel)
+                print "distance_from_goal: ", goal_distance
+                if goal_distance <= 4:
+                    # Achieved Goal!
+                    forward_vel = self.maxVelocity * 0.25 # Slow down to prepare for the next one
+                    self.curr_goal += 1
+                else:
+                    forward_vel = self.maxVelocity
 
             # control the motors
             ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(forward_vel, omega, g=1)
@@ -530,6 +537,7 @@ class Lab2Program:
             def plot_current_and_desired_heading():
                 self.plot_unit_quiver(finalUnitVector, 'r')
                 self.plot_unit_quiver(pol2cart(1, worldTheta2mapTheta(theta, self.worldNorthTheta)), 'k')
+                plt.title("Error Theta: %f" % error_theta)
             self.idash.add(plot_current_and_desired_heading)
             self.idash.add(self.plot_theta_history)
 
@@ -552,7 +560,7 @@ class Lab2Program:
         plt.ylim([-1.1,1.1])
 
     def plot_theta_history(self, expansion=5):
-        plt.plot(self.theta_history.ordered_data())
+        plt.plot([theta for theta in self.theta_history])
         if len(self.theta_history) < expansion:
             plt.xlim([0, expansion])
         else:
