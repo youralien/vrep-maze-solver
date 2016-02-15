@@ -547,10 +547,10 @@ class Lab2Program:
         plt.xlim([-1.1,1.1])
         plt.ylim([-1.1,1.1])
 
-    def plot_theta_history(self):
+    def plot_theta_history(self, expansion=5):
         plt.plot(self.theta_history)
-        if len(self.theta_history) < 5:
-            plt.xlim([0, 5])
+        if len(self.theta_history) < expansion:
+            plt.xlim([0, expansion])
         else:
             plt.xlim([0, len(self.theta_history)])
         ylim = np.pi + 0.5
