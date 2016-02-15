@@ -18,6 +18,7 @@ import signal
 import sys
 
 from idash import IDash
+from ringbuffer import RingBuffer
 
 # interactive plotting
 plt.ion()
@@ -403,7 +404,8 @@ class Lab2Program:
         self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
         self.worldNorthTheta = None
         self.maxVelocity = 1.0
-        self.theta_history = []
+        self.history_length = 5
+        self.theta_history = RingBuffer(self.history_length)
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -463,11 +465,13 @@ class Lab2Program:
             im = self.global_map_preprocess(resolution, image)
 
             self.pose = self.robot_pose_get()
-            x, y, theta = self.pose
+            x, y, _ = self.pose
+            theta = self.theta_history.weighted_average('last')
 
             # initialize worldNorthTheta for the first time
             if self.worldNorthTheta is None:
                 self.worldNorthTheta = self.pose[2]
+                _ = [self.theta_history.append(self.pose[2]) for _ in range(self.history_length)]
 
             self.pose_pixel = np.array(odom2pixelmap(x, y, self.map_side_length, im.shape[0]))
             m, n = self.pose_pixel
@@ -548,7 +552,7 @@ class Lab2Program:
         plt.ylim([-1.1,1.1])
 
     def plot_theta_history(self, expansion=5):
-        plt.plot(self.theta_history)
+        plt.plot(self.theta_history.ordered_data())
         if len(self.theta_history) < expansion:
             plt.xlim([0, expansion])
         else:
