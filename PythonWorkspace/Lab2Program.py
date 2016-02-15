@@ -517,7 +517,7 @@ class Lab2Program:
             # if desired heading is not directly in front
             if np.abs(error_theta) > np.pi / 3:
                 # turn in place
-                forward_vel = 0
+                forward_vel = self.maxVelocity
                 # omega *= 0.25
             else:
                 # Direct yourself to the goal
