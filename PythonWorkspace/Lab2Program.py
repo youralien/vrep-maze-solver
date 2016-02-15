@@ -446,9 +446,9 @@ class Lab2Program:
 
             # if goal is behind you
             if np.abs(delta_theta) > np.pi / 2:
-                # start going in reverse!
+                # three point turnish!
                 forward_vel *= -1
-                omega *= -1
+                omega *= 1.5
 
             # control the motors
             ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(forward_vel, omega, g)
@@ -464,8 +464,7 @@ class Lab2Program:
             im[goal_m,goal_n] = np.array((1.0, 1.0, 1.0))
             im[m,n,:] = np.array((255.0/255.0,192/255.0,203/255.0))
             plt.imshow(im)
-            plt.pause(0.1)
-            # time.sleep(0.05) #sleep 50ms
+            plt.pause(0.05) # sleep 50ms and animate
 
             if self.killer.kill_now:
                 self.clean_exit()
