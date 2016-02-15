@@ -305,6 +305,7 @@ class Lab2Program:
         self.initilize_vrep_api()
         self.define_constants()
         self.killer = GracefulKiller()
+        plt.figure(figsize=self.figsize)
 
     def initialize_vrep_client(self):
         #Initialisation for Python to connect to VREP
@@ -368,6 +369,7 @@ class Lab2Program:
         self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
         self.worldNorthTheta = None
         self.maxVelocity = 1.0
+        self.figsize = (4,8)
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -495,13 +497,31 @@ class Lab2Program:
             # for goal_idx in range(len(self.GOALS)):
             #     im[self.GOALS[goal_idx][0], self.GOALS[goal_idx][1]] = np.array((1.0, 1.0, 1.0))
 
-            im[goal_m,goal_n] = np.array((1.0, 1.0, 1.0))
-            im[m,n,:] = np.array((255.0/255.0,192/255.0,203/255.0))
-            plt.imshow(im)
+            # plt.figure(figsize=(7,10))
+            fig = plt.gcf()
+            fig.set_size_inches(*self.figsize)
+            plt.subplot(2,1,1)
+            self.plot_maze(im, m, n, goal_m, goal_n)
+            plt.subplot(2,1,2)
+            plt.cla() # clear axis
+            self.plot_desired_heading(finalUnitVector)
             plt.pause(0.05) # sleep 50ms and animate
 
             if self.killer.kill_now:
                 self.clean_exit()
+
+    def plot_maze(self, im, m, n, goal_m, goal_n):
+        """ plots the maze, with robot pose and goal pose visualized """
+        im[goal_m,goal_n] = np.array((1.0, 1.0, 1.0))
+        im[m,n,:] = np.array((255.0/255.0,192/255.0,203/255.0))
+        plt.imshow(im)
+
+    def plot_desired_heading(self, finalUnitVector):
+        X, Y = (0, 0)
+        U, V = (finalUnitVector[0], finalUnitVector[1])
+        plt.quiver(X,Y,U,V,angles='xy',scale_units='xy',scale=1)
+        plt.xlim([-1.1,1.1])
+        plt.ylim([-1.1,1.1])
 
     def clean_exit(self):
         _ = vrep.simxStopSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
