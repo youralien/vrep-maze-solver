@@ -498,7 +498,8 @@ class Lab2Program:
             self.plot_maze(im, m, n, goal_m, goal_n)
             plt.subplot(2,1,2)
             plt.cla() # clear axis
-            self.plot_desired_heading(finalUnitVector)
+            self.plot_unit_quiver(finalUnitVector, 'r')
+            self.plot_unit_quiver(pol2cart(1, theta), 'k')
             plt.pause(0.05) # sleep 50ms and animate
 
             if self.killer.kill_now:
@@ -510,17 +511,17 @@ class Lab2Program:
         im[m,n,:] = np.array((255.0/255.0,192/255.0,203/255.0))
         plt.imshow(im)
 
-    def plot_desired_heading(self, finalUnitVector):
+    def plot_unit_quiver(self, vector, color):
         X, Y = (0, 0)
-        U, V = (finalUnitVector[0], finalUnitVector[1])
-        plt.quiver(X,Y,U,V,angles='xy',scale_units='xy',scale=1)
+        U, V = (vector[0], vector[1])
+        plt.quiver(X,Y,U,V,angles='xy',scale_units='xy',scale=1,color=color)
         plt.xlim([-1.1,1.1])
         plt.ylim([-1.1,1.1])
 
     def plot_all_goals(self, im):
         # display all goals
         for goal_idx in range(len(self.GOALS)):
-            im[*self.GOALS[goal_idx][0], self.GOALS[goal_idx][1]] = np.array((1.0, 1.0, 1.0))
+            im[self.GOALS[goal_idx][0], self.GOALS[goal_idx][1]] = np.array((1.0, 1.0, 1.0))
 
     def clean_exit(self):
         _ = vrep.simxStopSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
