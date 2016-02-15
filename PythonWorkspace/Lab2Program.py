@@ -403,7 +403,7 @@ class Lab2Program:
         # FIMXE: hard coded goals
         self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
         self.worldNorthTheta = None
-        self.maxVelocity = 1.0
+        self.maxVelocity = 2.0
         self.history_length = 5
         self.theta_history = RingBuffer(self.history_length)
         self.e_theta_h = RingBuffer(self.history_length)
