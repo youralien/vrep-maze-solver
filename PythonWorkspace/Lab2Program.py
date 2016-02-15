@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt #used for image plotting
 import skimage.transform
 import skimage.filters
 from scipy.spatial.distance import cityblock
+import signal
+import sys
 
 # interactive plotting
 plt.ion()
@@ -255,21 +257,40 @@ def test_force_repulsion():
 
 # test_force_repulsion()
 
+
+class GracefulKiller:
+    kill_now = False
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+    def exit_gracefully(self,signum, frame):
+        self.kill_now = True
+
 class Lab2Program:
 
     def __init__(self):
         self.initialize_vrep_client()
         self.initilize_vrep_api()
         self.define_constants()
+        self.killer = GracefulKiller()
 
     def initialize_vrep_client(self):
         #Initialisation for Python to connect to VREP
         print 'Python program started'
-        vrep.simxFinish(-1) # just in case, close all opened connections
-        self.clientID=vrep.simxStart('127.0.0.1',19999,True,True,5000,5) #Timeout=5000ms, Threadcycle=5ms
-        if self.clientID!=-1:
-            print 'Connected to V-REP'
-        else:
+        count = 0
+        num_tries = 10
+        while count < num_tries:
+            vrep.simxFinish(-1) # just in case, close all opened connections
+            self.clientID=vrep.simxStart('127.0.0.1',19999,True,True,5000,5) #Timeout=5000ms, Threadcycle=5ms
+            if self.clientID!=-1:
+                print 'Connected to V-REP'
+                break
+            else:
+                "Trying again in a few moments..."
+                time.sleep(3)
+                count += 1
+        if count >= num_tries:
             print 'Failed connecting to V-REP'
             vrep.simxFinish(self.clientID)
 
@@ -417,17 +438,18 @@ class Lab2Program:
             print "distance_from_goal: ", goal_distance
             if goal_distance <= 4:
                 # Achieved Goal!
-                # forward_vel = 0
+                forward_vel = 0.5
                 self.curr_goal += 1
             else:
                 forward_vel = 1.0
             g = 1
 
-            # if np.abs(omega - 0) < 0.2:
-            #     forward_vel = 0.5
-            # else:
-            #     forward_vel = 0.0
-            #     omega *= 5
+            # if goal is behind you
+            if np.abs(delta_theta) > np.pi / 2:
+                # start going in reverse!
+                forward_vel *= -1
+                omega *= -1
+
             # control the motors
             ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(forward_vel, omega, g)
             _ = vrep.simxSetJointTargetVelocity(
@@ -445,13 +467,21 @@ class Lab2Program:
             plt.pause(0.1)
             # time.sleep(0.05) #sleep 50ms
 
-    def run(self):
-        if self.clientID!=-1:
-            self.robot_code()
+            if self.killer.kill_now:
+                self.clean_exit()
 
-
+    def clean_exit(self):
+        _ = vrep.simxStopSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
         vrep.simxFinish(self.clientID)
         print 'Program ended'
+        sys.exit(0)
+
+    def run(self):
+        if self.clientID!=-1:
+            _ = vrep.simxStartSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
+            self.robot_code()
+
+        self.clean_exit()
 
 if __name__ == '__main__':
     obj = Lab2Program()
