@@ -522,12 +522,6 @@ class Lab2Program:
             _ = vrep.simxSetJointTargetVelocity(
                 self.clientID,self.rightMotor,ctrl_sig_right,vrep.simx_opmode_oneshot_wait) # set right wheel velocity
 
-            # plt.imshow(walls, cmap='gray')
-            # plt.imshow(no_doors)
-            # plt.imshow(blurred_map)
-            # plt.imshow(paths)
-
-
             self.idash.add(lambda: self.plot_maze(im, m, n, goal_m, goal_n))
             def plot_current_and_desired_heading():
                 self.plot_unit_quiver(finalUnitVector, 'r')
@@ -536,14 +530,6 @@ class Lab2Program:
             self.idash.add(self.plot_theta_history)
 
             self.idash.plotframe()
-            # fig = plt.gcf()
-            # plt.subplot(2,1,1)
-            # self.plot_maze(im, m, n, goal_m, goal_n)
-            # plt.subplot(2,1,2)
-            # plt.cla() # clear axis
-            # self.plot_unit_quiver(finalUnitVector, 'r')
-            # self.plot_unit_quiver(pol2cart(1, worldTheta2mapTheta(theta, self.worldNorthTheta)), 'k')
-            # plt.pause(0.05) # sleep 50ms and animate
 
             if self.killer.kill_now:
                 self.clean_exit()
