@@ -493,13 +493,7 @@ class Lab2Program:
             # plt.imshow(blurred_map)
             # plt.imshow(paths)
 
-            # display all goals
-            # for goal_idx in range(len(self.GOALS)):
-            #     im[self.GOALS[goal_idx][0], self.GOALS[goal_idx][1]] = np.array((1.0, 1.0, 1.0))
-
-            # plt.figure(figsize=(7,10))
             fig = plt.gcf()
-            fig.set_size_inches(*self.figsize)
             plt.subplot(2,1,1)
             self.plot_maze(im, m, n, goal_m, goal_n)
             plt.subplot(2,1,2)
@@ -522,6 +516,11 @@ class Lab2Program:
         plt.quiver(X,Y,U,V,angles='xy',scale_units='xy',scale=1)
         plt.xlim([-1.1,1.1])
         plt.ylim([-1.1,1.1])
+
+    def plot_all_goals(self, im):
+        # display all goals
+        for goal_idx in range(len(self.GOALS)):
+            im[*self.GOALS[goal_idx][0], self.GOALS[goal_idx][1]] = np.array((1.0, 1.0, 1.0))
 
     def clean_exit(self):
         _ = vrep.simxStopSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
