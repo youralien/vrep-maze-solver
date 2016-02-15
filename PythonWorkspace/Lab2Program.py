@@ -407,6 +407,7 @@ class Lab2Program:
         self.history_length = 5
         self.theta_history = RingBuffer(self.history_length)
         self.e_theta_h = RingBuffer(self.history_length)
+        self.blurred_paths = None
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -417,11 +418,14 @@ class Lab2Program:
 
     def global_map_process(self, im):
         walls = im[:,:,0] > 0.25
-        # no_doors = im[:,:,1] * walls > 0.25
-        blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
         paths = walls < 0.15
-        blurred_paths = blurred_map < 0.15
-        return paths, blurred_paths
+        if self.blurred_paths is None:
+            print "Computed"
+            blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
+            blurred_paths = blurred_map < 0.15
+            return paths, blurred_paths
+        else:
+            return paths, self.blurred_paths
 
     def robot_pose_get(self):
         _, xyz = vrep.simxGetObjectPosition(
