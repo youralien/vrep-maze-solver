@@ -340,7 +340,7 @@ class Lab2Program:
         self.initilize_vrep_api()
         self.define_constants()
         self.killer = GracefulKiller()
-        self.idash = IDash(n_axes=3, framerate=0.05)
+        self.idash = IDash(framerate=0.05)
 
     def initialize_vrep_client(self):
         #Initialisation for Python to connect to VREP
@@ -418,9 +418,10 @@ class Lab2Program:
     def global_map_process(self, im):
         walls = im[:,:,0] > 0.25
         # no_doors = im[:,:,1] * walls > 0.25
-        # blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
+        blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
         paths = walls < 0.15
-        return paths
+        blurred_paths = blurred_map < 0.15
+        return paths, blurred_paths
 
     def robot_pose_get(self):
         _, xyz = vrep.simxGetObjectPosition(
@@ -480,7 +481,7 @@ class Lab2Program:
             self.goal_pose_pixel = np.array(self.GOALS[self.curr_goal])
             goal_m, goal_n = self.goal_pose_pixel
 
-            self.paths = self.global_map_process(im)
+            self.paths, self.blurred_paths = self.global_map_process(im)
             lidarValues = self.lidar_scan_get(window_size=21)
 
 
@@ -537,6 +538,7 @@ class Lab2Program:
             _ = vrep.simxSetJointTargetVelocity(
                 self.clientID,self.rightMotor,ctrl_sig_right,vrep.simx_opmode_oneshot_wait) # set right wheel velocity
 
+            self.idash.add(lambda: self.plot_maze(self.blurred_paths*1.0, m, n, goal_m, goal_n))
             self.idash.add(lambda: self.plot_maze(im, m, n, goal_m, goal_n))
             def plot_current_and_desired_heading():
                 self.plot_unit_quiver(finalUnitVector, 'r')
@@ -552,8 +554,14 @@ class Lab2Program:
 
     def plot_maze(self, im, m, n, goal_m, goal_n):
         """ plots the maze, with robot pose and goal pose visualized """
-        im[goal_m,goal_n] = np.array((1.0, 1.0, 1.0))
-        im[m,n,:] = np.array((255.0/255.0,192/255.0,203/255.0))
+        if len(im.shape) == 3:
+            goal_pixel_values = np.array((1.0, 1.0, 1.0))
+            robot_pixel_values = np.array((255.0/255.0,192/255.0,203/255.0))
+        elif len(im.shape) == 2:
+            goal_pixel_values = 0.5
+            robot_pixel_values = 0.5
+        im[goal_m,goal_n] = goal_pixel_values
+        im[m,n] = robot_pixel_values
         plt.imshow(im)
 
     def plot_unit_quiver(self, vector, color):

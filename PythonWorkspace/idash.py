@@ -16,22 +16,26 @@ class IDash(object):
         , (2,4)
     ]
 
-    def __init__(self, n_axes, framerate=0.05):
+    def __init__(self, framerate=0.05):
         """
         Parameters
         ----------
-        n_axes: int, how many figures you want in the interactive plot
         framerate: num, in seconds
         """
+        self.framerate = framerate
+        self.funcs = []
+        self.n_axes_handled = False
+
+    def handle_n_axes(self):
+        n_axes = len(self.funcs)
         if n_axes > len(self.grid_shapes):
             print "idash doesn't support that many."
 
-        self.framerate = framerate
         self.rows, self.cols = self.grid_shapes[n_axes-1] # 0 versus 1 indexing
-        self.funcs = []
         figscale = 4
         figsize = (self.cols * figscale, self.rows * figscale)
         plt.figure(figsize=figsize)
+        self.n_axes_handled = True
 
     def add(self, func):
         """ func is a plotting function handle, where func does not expect args """
@@ -39,6 +43,9 @@ class IDash(object):
 
     def plotframe(self):
         """ plot a single frame. For interactive plotting, we usually plot frames to create a "movie" """
+        if not self.n_axes_handled:
+            self.handle_n_axes()
+
         for count, func in enumerate(self.funcs):
             plot_number = count + 1
             plt.subplot(self.rows, self.cols, plot_number)
