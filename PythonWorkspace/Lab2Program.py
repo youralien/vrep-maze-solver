@@ -128,6 +128,19 @@ def angle_diff(a, b):
     else:
         return d2
 
+def test_angle_diff():
+    angles = np.linspace(-np.pi, np.pi, 64)
+    theta1s = np.linspace(-np.pi, np.pi, 8)
+    for count, theta1 in enumerate(theta1s):
+        diffs = []
+        for theta0 in angles:
+            diffs.append(angle_diff(theta0, theta1))
+        plt.subplot(4,2,count)
+        plt.plot(diffs)
+    plt.pause(15)
+
+# test_angle_diff()
+
 def ray_trace(paths, m, n, fr, compute_next_cell):
     """
     paths: a map of binary values, where True denotes pixels where robot can go (not walls)
@@ -183,6 +196,7 @@ def pseudoLidarSensor(paths, m, n, fr, original_four):
     return lidarValues
 
 def cart2pol(x, y):
+    """ NOTE: arctan2 returns phi in the range [-pi, pi] """
     rho = np.sqrt(x**2 + y**2)
     phi = np.arctan2(y, x)
     return(rho, phi)
@@ -199,16 +213,18 @@ def test_pol2cart2pol():
     angles = np.linspace(0, 2*np.pi, 64)
     xs, ys = zip(*[pol2cart(rho, angle) for angle in angles])
 
-    plt.subplot(2,1,1)
-    plt.plot(xs,ys)
+    plt.subplot(3,1,1)
+    plt.plot(angles)
 
     # cart2pol
     new_rhos, new_angles = zip(*[cart2pol(x,y) for x, y in zip(xs, ys)])
-    plt.subplot(2,1,2)
+    plt.subplot(3,1,2)
     plt.plot(new_angles)
+    plt.subplot(3,1,3)
+    plt.plot([ThetaRange.normalize_angle(ang) for ang in angles])
     plt.pause(15)
 
-test_pol2cart2pol()
+# test_pol2cart2pol()
 
 def mapTheta2worldTheta(mapTheta, northTheta):
     """ converts the mapTheta where
@@ -269,11 +285,9 @@ def test_force_repulsion():
         plt.subplot(4,1,i)
         plt.plot(y)
 
-    plt.show()
-    raw_input("")
+    plt.pause(15)
 
 # test_force_repulsion()
-
 
 class GracefulKiller:
     kill_now = False
@@ -351,8 +365,9 @@ class Lab2Program:
     def define_constants(self):
         self.map_side_length = 2.55
         # FIMXE: hard coded goals
-        self.GOALS = [(40+2,6), (40, 6+2), (40,21), (30,22), (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
+        self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
         self.worldNorthTheta = None
+        self.maxVelocity = 1.0
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -440,35 +455,32 @@ class Lab2Program:
             # TODO: do we use the unit vector (for direction) only, or the finalVector?
             finalValue, finalAngle = cart2pol(finalUnitVector[0], finalUnitVector[1])
 
-            # Direct yourself to the goal
-            goal_distance = np.linalg.norm(self.goal_pose_pixel - self.pose_pixel)
-            goal_theta_diff = angle_diff(mapTheta2worldTheta(self.attractionAngle, self.worldNorthTheta),theta)
-            print "Angle Diff ", goal_theta_diff
 
-            # proportional control on angular velocity
-            k_angular = 20.0 * (1.0 / (goal_distance + 1.0))  # turn faster when you are closer
+            error_theta = angle_diff(mapTheta2worldTheta(finalAngle, self.worldNorthTheta), theta)
 
-            delta_theta = angle_diff(mapTheta2worldTheta(finalAngle, self.worldNorthTheta), theta)
-            omega = k_angular * delta_theta
+            # P control angular
+            k_angular = 3.0 * self.maxVelocity
+            omega = k_angular * error_theta
             print "Omega: ", round(omega,1)
 
+            # if desired heading is directly in front
+            if np.abs(error_theta) > np.pi / 4:
+                # turn in place
+                forward_vel = 0
+                # omega *= 0.25
+
+            # Direct yourself to the goal
+            goal_distance = np.linalg.norm(self.goal_pose_pixel - self.pose_pixel)
             print "distance_from_goal: ", goal_distance
             if goal_distance <= 4:
                 # Achieved Goal!
-                forward_vel = 0.5
+                forward_vel = self.maxVelocity * 0.25 # Slow down to prepare for the next one
                 self.curr_goal += 1
             else:
-                forward_vel = 1.0
-            g = 1
-
-            # if goal is behind you
-            if np.abs(delta_theta) > 3 * np.pi / 4:
-                # three point turnish!
-                forward_vel *= -1
-                omega *= 1.5
+                forward_vel = self.maxVelocity
 
             # control the motors
-            ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(forward_vel, omega, g)
+            ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(forward_vel, omega, g=1)
             _ = vrep.simxSetJointTargetVelocity(
                 self.clientID,self.leftMotor,ctrl_sig_left,vrep.simx_opmode_oneshot_wait) # set left wheel velocity
             _ = vrep.simxSetJointTargetVelocity(
@@ -478,6 +490,11 @@ class Lab2Program:
             # plt.imshow(no_doors)
             # plt.imshow(blurred_map)
             # plt.imshow(paths)
+
+            # display all goals
+            # for goal_idx in range(len(self.GOALS)):
+            #     im[self.GOALS[goal_idx][0], self.GOALS[goal_idx][1]] = np.array((1.0, 1.0, 1.0))
+
             im[goal_m,goal_n] = np.array((1.0, 1.0, 1.0))
             im[m,n,:] = np.array((255.0/255.0,192/255.0,203/255.0))
             plt.imshow(im)
