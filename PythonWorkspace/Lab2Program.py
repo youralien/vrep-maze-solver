@@ -193,6 +193,23 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
+def test_pol2cart2pol():
+    # pol2cart
+    rho = 1
+    angles = np.linspace(0, 2*np.pi, 64)
+    xs, ys = zip(*[pol2cart(rho, angle) for angle in angles])
+
+    plt.subplot(2,1,1)
+    plt.plot(xs,ys)
+
+    # cart2pol
+    new_rhos, new_angles = zip(*[cart2pol(x,y) for x, y in zip(xs, ys)])
+    plt.subplot(2,1,2)
+    plt.plot(new_angles)
+    plt.pause(15)
+
+test_pol2cart2pol()
+
 def mapTheta2worldTheta(mapTheta, northTheta):
     """ converts the mapTheta where
 
@@ -445,7 +462,7 @@ class Lab2Program:
             g = 1
 
             # if goal is behind you
-            if np.abs(delta_theta) > np.pi / 2:
+            if np.abs(delta_theta) > 3 * np.pi / 4:
                 # three point turnish!
                 forward_vel *= -1
                 omega *= 1.5
