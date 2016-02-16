@@ -17,7 +17,7 @@ from scipy.spatial.distance import cityblock, euclidean
 import signal
 import sys
 
-from datastructs import PriorityQueueSet
+from priorityqueue import PriorityQueueSet
 from idash import IDash
 from ringbuffer import RingBuffer
 
