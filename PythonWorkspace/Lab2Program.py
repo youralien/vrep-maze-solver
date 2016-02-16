@@ -449,9 +449,6 @@ class AStarBinaryGrid:
                     ))
             dead_nodes.append(current)
 
-        print self.node_grid
-        print self.node_grid[current].parent
-        raw_input("")
         # trace thy ancestors
         print "Tracing thy ancestors"
         reversePath = []
@@ -571,7 +568,6 @@ class Lab2Program:
         walls = im[:,:,0] > 0.25
         paths = walls < 0.15
         if self.blurred_paths is None:
-            print "Computed"
             blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
             blurred_paths = blurred_map < 0.15
             # np.save('binary_grid.npy', blurred_paths)
@@ -639,7 +635,6 @@ class Lab2Program:
 
             # calculate intermediate goals once
             if self.GOALS is None:
-                raw_input("")
                 # acquire pixel location of goal
                 _, finishPose = vrep.simxGetObjectPosition(
                     self.clientID, self.goalHandle, -1, vrep.simx_opmode_buffer)
