@@ -404,10 +404,12 @@ class AStarBinaryGrid:
         path.append(start)
         tree = Tree()
         nested_tree = tree
+
         while not(to_visit.empty()):
             (priority_number, current) = to_visit.get()
             if self.heuristic(current, finish) == 0.0:
                 print "Goal Found!"
+                print "nested_tree: \n", nested_tree
                 break
             nested_tree = nested_tree[str(current)]
             for neigh in self.neighbors_get(current):
@@ -430,14 +432,38 @@ class AStarBinaryGrid:
         def rememberChain(t, chain):
             if len(t) > 0:
                 for node in t.iterkeys():
-                    chain.append(node)
+                    # DONT IMMEDIATELY append to the chain, since this chain will continue with every neighbor node!
+                    # chain.append(node)
+                    GOALS = [tupstring2tuple(tupstring) for tupstring in chain]
+                    self.plot(GOALS)
                     if node == str(finish):
                         print "FOUND THE FUCKING CHAIN WHY CANT I RETURN IT: \n",chain
                         dump(chain, open(filepath, 'w'))
                     else:
-                        rememberChain(t[node], chain)
+                        print len(chain)
+                        rememberChain(t[node], chain + (node,))
 
-        rememberChain(tree, [])
+
+        def nestedIndexTracker(t, chain):
+            if len(t) > 0:
+                evalStatement = "t"
+                for indexer in chain:
+                    evalStatement += "['%s']"%indexer
+                subtree = eval(evalStatement)
+                for node in subtree.iterkeys():
+                    # DONT IMMEDIATELY append to the chain, since this chain will continue with every neighbor node!
+                    # chain.append(node)
+                    GOALS = [tupstring2tuple(tupstring) for tupstring in chain]
+                    self.plot(GOALS)
+                    if node == str(finish):
+                        print "FOUND THE FUCKING CHAIN WHY CANT I RETURN IT: \n",chain
+                        dump(chain, open(filepath, 'w'))
+                    else:
+                        print len(chain)
+                        nestedIndexTracker(t, chain + (node,))
+
+        rememberChain(tree, ())
+        # nestedIndexTracker(tree, ())
         # tree.selfParams(finish, filepath)
         # tree.rememberChain([])
         goal_strings = load(open(filepath, 'r'))
@@ -451,11 +477,12 @@ class AStarBinaryGrid:
         else:
             for pix in pixels_to_mark:
                 im[pix] = 0.5
+        plt.clf()
         plt.imshow(im)
-        plt.pause(15)
+        plt.pause(0.05)
 
 astar = AStarBinaryGrid(heuristic=cityblock)
-start_pix = (40+2,6)
+start_pix = (55,6)
 finish_pix = (5,55)
 GOALS = astar.calculate_path(start_pix, finish_pix)
 astar.plot(GOALS)
