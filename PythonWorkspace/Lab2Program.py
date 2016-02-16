@@ -16,6 +16,7 @@ import skimage.filters
 from scipy.spatial.distance import cityblock, euclidean
 import signal
 import sys
+from json import load
 
 from datastructs import PriorityQueueSet, Tree
 from idash import IDash
@@ -325,6 +326,11 @@ def test_force_repulsion():
 
 # test_force_repulsion()
 
+def tupstring2tuple(tupstring):
+    """ from '(5,3)' to 5, 3 as integers """
+    m, n = tupstring.strip('()').split(',')
+    return int(m), int(n)
+
 class GracefulKiller:
     kill_now = False
     def __init__(self):
@@ -366,7 +372,7 @@ class AStarBinaryGrid:
             , [0, -1]
             , [-1, 0]
         ]
-
+        np.random.shuffle(directions)
         for direction_vect in directions:
             neighbor_cell = np.array(arr) + np.array(direction_vect)
             if self.grid[neighbor_cell]:
@@ -417,11 +423,23 @@ class AStarBinaryGrid:
                         neigh
                     ))
             dead_nodes.append(current)
-            print "nice tree: \n", tree
-            raw_input("")
 
-        self.plot(dead_nodes)
-        # TODO: Link the chain backwards
+
+        # def rememberChain(t, chain):
+        #     if len(t) > 0:
+        #         for node in t.iterkeys():
+        #             chain.append(node)
+        #             if node == str(finish):
+        #                 print "FOUND THE FUCKING CHAIN WHY CANT I RETURN IT: \n",chain
+        #             else:
+        #                 rememberChain(t[node], chain)
+
+        filepath = 'GOALS.json'
+        tree.rememberChain(finish, [], filepath)
+        goal_strings = load(open(filepath, 'r'))
+        GOALS = [tupstring2tuple(tupstring) for tupstring in goal_strings]
+        
+        return GOALS
 
     def plot(self, pixels_to_mark=None):
         im = self.grid.grid*1.0
@@ -436,7 +454,8 @@ class AStarBinaryGrid:
 astar = AStarBinaryGrid(heuristic=cityblock)
 start_pix = (40+2,6)
 finish_pix = (5,55)
-astar.calculate_path(start_pix, finish_pix)
+GOALS = astar.calculate_path(start_pix, finish_pix)
+astar.plot(GOALS)
 
 class Lab2Program:
 
@@ -595,6 +614,7 @@ class Lab2Program:
 
             # calculate intermediate goals once
             if self.GOALS is None:
+                raw_input("")
                 # acquire pixel location of goal
                 _, finishPose = vrep.simxGetObjectPosition(
                     self.clientID, self.goalHandle, -1, vrep.simx_opmode_buffer)
