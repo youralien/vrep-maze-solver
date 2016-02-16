@@ -17,7 +17,7 @@ from scipy.spatial.distance import cityblock, euclidean
 import signal
 import sys
 
-from datastructs import PriorityQueueSet
+from datastructs import PriorityQueueSet, Tree
 from idash import IDash
 from ringbuffer import RingBuffer
 
@@ -394,17 +394,22 @@ class AStarBinaryGrid:
         dead_nodes = []
         path = []
         path.append(start)
-
+        tree = Tree()
+        nested_tree = tree
         while not(to_visit.empty()):
             (priority_number, current) = to_visit.get()
             if self.heuristic(current, finish) == 0.0:
                 print "Goal Found!"
                 break
+            nested_tree = nested_tree[str(current)]
             for neigh in self.neighbors_get(current):
+                # let leaves equal pixel tuples; they will replaces in the next call
+
                 condA = (neigh not in dead_nodes) # not dead, still valid
                 condB = (not to_visit.contains(neigh)) # we don't have it on our todo list yet
                 condC = (g_cost[current] + 1 < g_cost[neigh]) # we can get to this neighbor in less cost via our current path
                 if condA and (condB or condC):
+                    nested_tree[str(neigh)] = Tree()
                     print "Found new node to visit"
                     g_cost[neigh] = g_cost[current] + 1 # cost of neighbor increases by one, since its one move farther away from start
                     to_visit.put((
@@ -412,6 +417,8 @@ class AStarBinaryGrid:
                         neigh
                     ))
             dead_nodes.append(current)
+            print "nice tree: \n", tree
+            raw_input("")
 
         self.plot(dead_nodes)
         # TODO: Link the chain backwards

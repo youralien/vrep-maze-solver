@@ -1,4 +1,6 @@
 from Queue import heapq
+from collections import defaultdict
+from json import loads, dumps
 
 class PriorityQueueSet(object):
     """ Combined priority queue and set data structure. Acts like
@@ -54,3 +56,28 @@ class PriorityQueueSet(object):
         if not (item in self.set):
             self.set[item] = True
             heapq.heappush(self.heap, item)
+
+
+class Tree(defaultdict):
+    """ awesome reddit:
+    https://gist.github.com/obeleh/4451005
+    """
+    def __init__(self, parent=None):
+        self.parent = parent
+        defaultdict.__init__(self, lambda: Tree(self))
+
+    def __str__(self, *args, **kwargs):
+        return dumps(self, sort_keys=True, indent=4)
+
+if __name__ == "__main__":
+    a = Tree()
+    a['1']['2'] = 3
+    a['1']['3']['4'] = 4
+    print a['1']['3']
+    print a['1']['3'].parent
+    print a['1']['3'].parent.parent
+    print a['1'].parent
+    b = Tree({"1": 1, "2": {"1": 3}})
+    print b
+    c = Tree('{"1": 1, "2": {"1": 3}}')
+    print c
