@@ -16,11 +16,13 @@ import skimage.filters
 from scipy.spatial.distance import cityblock, euclidean
 import signal
 import sys
-from json import load
+from json import load, dump
 
 from datastructs import PriorityQueueSet, Tree
 from idash import IDash
 from ringbuffer import RingBuffer
+
+sys.setrecursionlimit(100000)
 
 # interactive plotting
 plt.ion()
@@ -416,7 +418,6 @@ class AStarBinaryGrid:
                 condC = (g_cost[current] + 1 < g_cost[neigh]) # we can get to this neighbor in less cost via our current path
                 if condA and (condB or condC):
                     nested_tree[str(neigh)] = Tree()
-                    print "Found new node to visit"
                     g_cost[neigh] = g_cost[current] + 1 # cost of neighbor increases by one, since its one move farther away from start
                     to_visit.put((
                         g_cost[current] + 1 + self.heuristic(neigh, finish), # one move farther from start + heuristic distance from finish
@@ -425,20 +426,22 @@ class AStarBinaryGrid:
             dead_nodes.append(current)
 
 
-        # def rememberChain(t, chain):
-        #     if len(t) > 0:
-        #         for node in t.iterkeys():
-        #             chain.append(node)
-        #             if node == str(finish):
-        #                 print "FOUND THE FUCKING CHAIN WHY CANT I RETURN IT: \n",chain
-        #             else:
-        #                 rememberChain(t[node], chain)
-
         filepath = 'GOALS.json'
-        tree.rememberChain(finish, [], filepath)
+        def rememberChain(t, chain):
+            if len(t) > 0:
+                for node in t.iterkeys():
+                    chain.append(node)
+                    if node == str(finish):
+                        print "FOUND THE FUCKING CHAIN WHY CANT I RETURN IT: \n",chain
+                        dump(chain, open(filepath, 'w'))
+                    else:
+                        rememberChain(t[node], chain)
+
+        rememberChain(tree, [])
+        # tree.selfParams(finish, filepath)
+        # tree.rememberChain([])
         goal_strings = load(open(filepath, 'r'))
         GOALS = [tupstring2tuple(tupstring) for tupstring in goal_strings]
-        
         return GOALS
 
     def plot(self, pixels_to_mark=None):

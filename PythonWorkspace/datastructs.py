@@ -2,8 +2,6 @@ from Queue import heapq
 from collections import defaultdict
 from json import loads, dumps, dump
 
-import sys
-sys.setrecursionlimit(10000)
 
 class PriorityQueueSet(object):
     """ Combined priority queue and set data structure. Acts like
@@ -71,24 +69,6 @@ class Tree(defaultdict):
 
     def __str__(self, *args, **kwargs):
         return dumps(self, sort_keys=True, indent=4)
-
-    def rememberChain(self, finish, chain, filepath):
-        already_been = []
-        found_one = False
-        if len(self) > 0:
-            for node in self.iterkeys():
-                if node not in already_been:
-                    already_been.append(node)
-                    chain.append(node)
-                    if node == str(finish):
-                        dump(chain, open(filepath, 'w'))
-                        found_one = True
-                        return
-                    else:
-                        if found_one:
-                            return
-                        else:
-                            self[node].rememberChain(finish, chain, filepath)
 
 if __name__ == "__main__":
     a = Tree()
