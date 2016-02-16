@@ -13,10 +13,11 @@ import numpy as np #array library
 import matplotlib.pyplot as plt #used for image plotting
 import skimage.transform
 import skimage.filters
-from scipy.spatial.distance import cityblock
+from scipy.spatial.distance import cityblock, euclidean
 import signal
 import sys
 
+from myqueue import PriorityQueueSet
 from idash import IDash
 from ringbuffer import RingBuffer
 
@@ -333,6 +334,104 @@ class GracefulKiller:
     def exit_gracefully(self,signum, frame):
         self.kill_now = True
 
+class Grid:
+    def __init__(self, grid):
+        self.grid = grid
+        self.shape = grid.shape
+
+    def __getitem__(self, arr):
+        return self.grid[arr[0], arr[1]]
+
+    def __setitem__(self, idx, val):
+        self.grid[idx] = val
+
+class AStarBinaryGrid:
+    def __init__(self, binary_grid=None, heuristic=cityblock):
+        """
+        binary grid: True denoting a valid grid location for the path
+        heuristic: function handle, which takes two vectors and computes a distance heuristic
+        """
+        if binary_grid is None:
+            self.grid = Grid(np.load('binary_grid.npy'))
+        else:
+            assert len(binary_grid.shape) == 2
+            self.grid = Grid(binary_grid)
+
+        self.heuristic = lambda x, y: heuristic(np.array(x), np.array(y))
+
+    def neighbors_get(self, arr):
+        directions = [
+              [0, 1]
+            , [1, 0]
+            , [0, -1]
+            , [-1, 0]
+        ]
+
+        for direction_vect in directions:
+            neighbor_cell = np.array(arr) + np.array(direction_vect)
+            if self.grid[neighbor_cell]:
+                yield (neighbor_cell[0], neighbor_cell[1])
+
+    def calculate_path(self, start, finish):
+        assert (len(start) == 2)
+        assert (len(finish) == 2)
+        start = (start[0], start[1])
+        finish = (finish[0], finish[1])
+        assert self.grid[start] # start is valid
+        assert self.grid[finish] # finish is valid
+        g_cost = Grid(np.zeros(self.grid.shape))
+
+        g_cost[start] = 0
+
+        # Priority Queues:
+        # The lowest valued entries are retrieved first (the lowest valued entry is the one returned by sorted(list(entries))[0]).
+        # A typical pattern for entries is a tuple in the form: (priority_number, data).
+        to_visit = PriorityQueueSet()
+        to_visit.put((
+            self.heuristic(start, finish),
+            start
+        ))
+        dead_nodes = []
+        path = []
+        path.append(start)
+
+        while not(to_visit.empty()):
+            (priority_number, current) = to_visit.get()
+            if self.heuristic(current, finish) == 0.0:
+                print "Goal Found!"
+                break
+            for neigh in self.neighbors_get(current):
+                condA = (neigh not in dead_nodes) # not dead, still valid
+                condB = (not to_visit.contains(neigh)) # we don't have it on our todo list yet
+                condC = (g_cost[current] + 1 < g_cost[neigh]) # we can get to this neighbor in less cost via our current path
+                if condA and (condB or condC):
+                    print "Found new node to visit"
+                    g_cost[neigh] = g_cost[current] + 1
+                    to_visit.put((
+                        g_cost[current] + 1 + self.heuristic(neigh, finish),
+                        neigh
+                    ))
+            dead_nodes.append(current)
+
+        self.plot(dead_nodes)
+        # TODO: Link the chain backwards
+
+    def plot(self, pixels_to_mark=None):
+        im = self.grid.grid*1.0
+        if pixels_to_mark is None:
+            pass
+        else:
+            for pix in pixels_to_mark:
+                im[pix] = 0.5
+        plt.imshow(im)
+        plt.pause(15)
+        # self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
+
+astar = AStarBinaryGrid(heuristic=cityblock)
+start_pix = (40+2,6)
+finish_pix = (5,55)
+astar.calculate_path(start_pix, finish_pix)
+
 class Lab2Program:
 
     def __init__(self):
@@ -401,13 +500,15 @@ class Lab2Program:
     def define_constants(self):
         self.map_side_length = 2.55
         # FIMXE: hard coded goals
-        self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
+        # self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
+        self.GOALS = None
         self.worldNorthTheta = None
         self.maxVelocity = 2.0
         self.history_length = 5
         self.theta_history = RingBuffer(self.history_length)
         self.e_theta_h = RingBuffer(self.history_length)
         self.blurred_paths = None
+        self.path_skip = 8
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -423,6 +524,7 @@ class Lab2Program:
             print "Computed"
             blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
             blurred_paths = blurred_map < 0.15
+            # np.save('binary_grid.npy', blurred_paths)
             return paths, blurred_paths
         else:
             return paths, self.blurred_paths
@@ -482,10 +584,22 @@ class Lab2Program:
             self.pose_pixel = np.array(odom2pixelmap(x, y, self.map_side_length, im.shape[0]))
             m, n = self.pose_pixel
 
-            self.goal_pose_pixel = np.array(self.GOALS[self.curr_goal])
-            goal_m, goal_n = self.goal_pose_pixel
 
             self.paths, self.blurred_paths = self.global_map_process(im)
+
+            # calculate intermediate goals once
+            if self.GOALS is None:
+                # acquire pixel location of goal
+                _, finishPose = vrep.simxGetObjectPosition(
+                    self.clientID, self.goalHandle, -1, vrep.simx_opmode_buffer)
+                self.finish_pixel = odom2pixelmap(finishPose[0], finishPose[1], self.map_side_length, im.shape[0])
+                contiguousPath = AStarBinaryGrid(self.blurred_paths).calculate_path(self.pose_pixel, self.finish_pixel)
+                self.GOALS = contiguousPath[::self.path_skip]
+                # SKIP THIS FIRST LOOP AND CONTINUE
+                continue
+            else:
+                self.goal_pose_pixel = np.array(self.GOALS[self.curr_goal])
+                goal_m, goal_n = self.goal_pose_pixel
             lidarValues = self.lidar_scan_get(window_size=21)
 
 
