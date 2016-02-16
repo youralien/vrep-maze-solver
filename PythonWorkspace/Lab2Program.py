@@ -16,9 +16,8 @@ import skimage.filters
 from scipy.spatial.distance import cityblock, euclidean
 import signal
 import sys
-from json import load, dump
 
-from datastructs import PriorityQueueSet, Tree
+from datastructs import PriorityQueueSet
 from idash import IDash
 from ringbuffer import RingBuffer
 
@@ -342,6 +341,29 @@ class GracefulKiller:
     def exit_gracefully(self,signum, frame):
         self.kill_now = True
 
+class Node:
+    """ Idea of Node was inspired by this gist:
+    https://gist.github.com/jamiees2/5531924
+    """
+    def __init__(self, parent):
+        self.parent = parent
+
+class NodeGrid:
+    """ Idea of NodeGrid was inspired by this gist:
+    https://gist.github.com/jamiees2/5531924
+    """
+    def __init__(self, shape):
+        self.grid = []
+        for rows in range(shape[0]):
+            cols = shape[1]
+            self.grid.append([None] * cols)
+
+    def __getitem__(self, idx):
+        return self.grid[idx[0]][idx[1]]
+
+    def __setitem__(self, idx, node):
+        self.grid[idx[0]][idx[1]] = node
+
 class Grid:
     def __init__(self, grid):
         self.grid = grid
@@ -360,11 +382,12 @@ class AStarBinaryGrid:
         heuristic: function handle, which takes two vectors and computes a distance heuristic
         """
         if binary_grid is None:
-            self.grid = Grid(np.load('binary_grid.npy'))
+            self.valid_grid = Grid(np.load('binary_grid.npy'))
         else:
             assert len(binary_grid.shape) == 2
-            self.grid = Grid(binary_grid)
+            self.valid_grid = Grid(binary_grid)
 
+        self.node_grid = NodeGrid(self.valid_grid.shape)
         self.heuristic = lambda x, y: heuristic(np.array(x), np.array(y))
 
     def neighbors_get(self, arr):
@@ -377,7 +400,7 @@ class AStarBinaryGrid:
         np.random.shuffle(directions)
         for direction_vect in directions:
             neighbor_cell = np.array(arr) + np.array(direction_vect)
-            if self.grid[neighbor_cell]:
+            if self.valid_grid[neighbor_cell]:
                 yield (neighbor_cell[0], neighbor_cell[1])
 
     def calculate_path(self, start, finish):
@@ -385,9 +408,9 @@ class AStarBinaryGrid:
         assert (len(finish) == 2)
         start = (start[0], start[1])
         finish = (finish[0], finish[1])
-        assert self.grid[start] # start is valid
-        assert self.grid[finish] # finish is valid
-        g_cost = Grid(np.zeros(self.grid.shape))
+        assert self.valid_grid[start] # start is valid
+        assert self.valid_grid[finish] # finish is valid
+        g_cost = Grid(np.zeros(self.valid_grid.shape))
 
         g_cost[start] = 0
 
@@ -400,26 +423,25 @@ class AStarBinaryGrid:
             start
         ))
         dead_nodes = []
-        path = []
-        path.append(start)
-        tree = Tree()
-        nested_tree = tree
 
+        first_time_in = True
         while not(to_visit.empty()):
             (priority_number, current) = to_visit.get()
+
+            # Link this first current node back to the parent start or root node
+            if first_time_in:
+                self.node_grid[current] = Node(parent=None)
+                first_time_in = False
+
             if self.heuristic(current, finish) == 0.0:
                 print "Goal Found!"
-                print "nested_tree: \n", nested_tree
                 break
-            nested_tree = nested_tree[str(current)]
             for neigh in self.neighbors_get(current):
-                # let leaves equal pixel tuples; they will replaces in the next call
-
                 condA = (neigh not in dead_nodes) # not dead, still valid
                 condB = (not to_visit.contains(neigh)) # we don't have it on our todo list yet
                 condC = (g_cost[current] + 1 < g_cost[neigh]) # we can get to this neighbor in less cost via our current path
                 if condA and (condB or condC):
-                    nested_tree[str(neigh)] = Tree()
+                    self.node_grid[neigh] = Node(parent=current)
                     g_cost[neigh] = g_cost[current] + 1 # cost of neighbor increases by one, since its one move farther away from start
                     to_visit.put((
                         g_cost[current] + 1 + self.heuristic(neigh, finish), # one move farther from start + heuristic distance from finish
@@ -427,51 +449,21 @@ class AStarBinaryGrid:
                     ))
             dead_nodes.append(current)
 
+        print self.node_grid
+        print self.node_grid[current].parent
+        raw_input("")
+        # trace thy ancestors
+        print "Tracing thy ancestors"
+        reversePath = []
+        current = finish
+        while self.node_grid[current].parent:
+            reversePath.append(current)
+            current = self.node_grid[current].parent
 
-        filepath = 'GOALS.json'
-        def rememberChain(t, chain):
-            if len(t) > 0:
-                for node in t.iterkeys():
-                    # DONT IMMEDIATELY append to the chain, since this chain will continue with every neighbor node!
-                    # chain.append(node)
-                    GOALS = [tupstring2tuple(tupstring) for tupstring in chain]
-                    self.plot(GOALS)
-                    if node == str(finish):
-                        print "FOUND THE FUCKING CHAIN WHY CANT I RETURN IT: \n",chain
-                        dump(chain, open(filepath, 'w'))
-                    else:
-                        print len(chain)
-                        rememberChain(t[node], chain + (node,))
-
-
-        def nestedIndexTracker(t, chain):
-            if len(t) > 0:
-                evalStatement = "t"
-                for indexer in chain:
-                    evalStatement += "['%s']"%indexer
-                subtree = eval(evalStatement)
-                for node in subtree.iterkeys():
-                    # DONT IMMEDIATELY append to the chain, since this chain will continue with every neighbor node!
-                    # chain.append(node)
-                    GOALS = [tupstring2tuple(tupstring) for tupstring in chain]
-                    self.plot(GOALS)
-                    if node == str(finish):
-                        print "FOUND THE FUCKING CHAIN WHY CANT I RETURN IT: \n",chain
-                        dump(chain, open(filepath, 'w'))
-                    else:
-                        print len(chain)
-                        nestedIndexTracker(t, chain + (node,))
-
-        rememberChain(tree, ())
-        # nestedIndexTracker(tree, ())
-        # tree.selfParams(finish, filepath)
-        # tree.rememberChain([])
-        goal_strings = load(open(filepath, 'r'))
-        GOALS = [tupstring2tuple(tupstring) for tupstring in goal_strings]
-        return GOALS
+        return reversePath[::-1]
 
     def plot(self, pixels_to_mark=None):
-        im = self.grid.grid*1.0
+        im = self.valid_grid.grid*1.0
         if pixels_to_mark is None:
             pass
         else:
@@ -481,11 +473,14 @@ class AStarBinaryGrid:
         plt.imshow(im)
         plt.pause(0.05)
 
-astar = AStarBinaryGrid(heuristic=cityblock)
-start_pix = (55,6)
-finish_pix = (5,55)
-GOALS = astar.calculate_path(start_pix, finish_pix)
-astar.plot(GOALS)
+def test_AStarBinaryGrid():
+    astar = AStarBinaryGrid(heuristic=cityblock)
+    start_pix = (55,6)
+    finish_pix = (5,55)
+    GOALS = astar.calculate_path(start_pix, finish_pix)
+    astar.plot(GOALS)
+
+# test_AStarBinaryGrid()
 
 class Lab2Program:
 
