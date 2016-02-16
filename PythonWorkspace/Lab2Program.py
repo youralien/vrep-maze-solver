@@ -17,7 +17,7 @@ from scipy.spatial.distance import cityblock, euclidean
 import signal
 import sys
 
-from myqueue import PriorityQueueSet
+from datastructs import PriorityQueueSet
 from idash import IDash
 from ringbuffer import RingBuffer
 
@@ -406,9 +406,9 @@ class AStarBinaryGrid:
                 condC = (g_cost[current] + 1 < g_cost[neigh]) # we can get to this neighbor in less cost via our current path
                 if condA and (condB or condC):
                     print "Found new node to visit"
-                    g_cost[neigh] = g_cost[current] + 1
+                    g_cost[neigh] = g_cost[current] + 1 # cost of neighbor increases by one, since its one move farther away from start
                     to_visit.put((
-                        g_cost[current] + 1 + self.heuristic(neigh, finish),
+                        g_cost[current] + 1 + self.heuristic(neigh, finish), # one move farther from start + heuristic distance from finish
                         neigh
                     ))
             dead_nodes.append(current)
@@ -425,7 +425,6 @@ class AStarBinaryGrid:
                 im[pix] = 0.5
         plt.imshow(im)
         plt.pause(15)
-        # self.GOALS = [(40+2,6), (40, 6+2), (40,21), (35, 19), (30,22),  (29,10), (27,5), (20,8), (20,33), (20, 48), (5,55)]
 
 astar = AStarBinaryGrid(heuristic=cityblock)
 start_pix = (40+2,6)
