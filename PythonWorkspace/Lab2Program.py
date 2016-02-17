@@ -551,11 +551,13 @@ class Lab2Program:
         self.GOALS = None
         self.worldNorthTheta = None
         self.maxVelocity = 2.0
-        self.history_length = 5
+        self.history_length = 10
         self.theta_history = RingBuffer(self.history_length)
         self.e_theta_h = RingBuffer(self.history_length)
+        self.v_history = RingBuffer(self.history_length)
+        self.omega_history = RingBuffer(self.history_length)
         self.blurred_paths = None
-        self.path_skip = 8
+        self.path_skip = 7
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -665,14 +667,14 @@ class Lab2Program:
             error_theta = angle_diff(mapTheta2worldTheta(finalAngle, self.worldNorthTheta), theta)
             self.e_theta_h.append(error_theta)
 
-            k_angular_p = 2.0 * self.maxVelocity
-            k_angular_D = 0.25
+            k_angular_p = 1.85 * self.maxVelocity
+            k_angular_D = 0.175
             k_angular_S = 1.0
-            k_angular_I = 2.5
+            k_angular_I = 8.0
             omega = k_angular_p * (
                   error_theta
                 + k_angular_D / k_angular_S * (self.e_theta_h[-1] - self.e_theta_h[-2])
-                + k_angular_S / k_angular_I * sum(self.e_theta_h)
+                # + k_angular_S / k_angular_I * sum(self.e_theta_h)
             )
             print "Omega: ", round(omega,1)
 
@@ -682,6 +684,7 @@ class Lab2Program:
             # if desired heading is not directly in front
             if np.abs(error_theta) > np.pi / 3:
                 # turn in place
+                # forward_vel = self.maxVelocity * 0.10 * goal_distance
                 forward_vel = self.maxVelocity
                 # omega *= 0.25
             else:
@@ -690,10 +693,16 @@ class Lab2Program:
                 print "distance_from_goal: ", goal_distance
                 if goal_distance <= 4:
                     # Achieved Goal!
-                    forward_vel = self.maxVelocity * 0.25 # Slow down to prepare for the next one
+                    # forward_vel = self.maxVelocity * 0.05 * goal_distance # Slow down to prepare for the next one
+                    forward_vel = self.maxVelocity * 0.05 * goal_distance # Slow down to prepare for the next one
                     self.curr_goal += 1
                 else:
-                    forward_vel = self.maxVelocity
+                    forward_vel = self.maxVelocity * 0.10 * goal_distance
+
+
+            # Store the results in the v and omega history vectors
+            self.v_history.append(forward_vel)
+            self.omega_history.append(omega)
 
             # control the motors
             ctrl_sig_left, ctrl_sig_right = vomega2bytecodes(forward_vel, omega, g=1)
@@ -710,6 +719,8 @@ class Lab2Program:
                 plt.title("Error Theta: %f" % error_theta)
             self.idash.add(plot_current_and_desired_heading)
             self.idash.add(self.plot_theta_history)
+            self.idash.add(lambda: plt.plot([v_val for v_val in self.v_history]) and plt.ylim(0, 15))
+            self.idash.add(lambda: plt.plot([omega_val for omega_val in self.omega_history]) and plt.ylim(-15,15))
 
             self.idash.plotframe()
 
@@ -757,8 +768,12 @@ class Lab2Program:
 
     def run(self):
         if self.clientID!=-1:
-            _ = vrep.simxStartSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
-            self.robot_code()
+            try:
+                _ = vrep.simxStartSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
+                self.robot_code()
+            except Exception, e:
+                print e
+                self.clean_exit()
 
         self.clean_exit()
 
