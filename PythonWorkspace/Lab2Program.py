@@ -551,13 +551,14 @@ class Lab2Program:
         self.GOALS = None
         self.worldNorthTheta = None
         self.maxVelocity = 2.0
-        self.history_length = 10
+        self.history_length = 5
         self.theta_history = RingBuffer(self.history_length)
         self.e_theta_h = RingBuffer(self.history_length)
+        self.e_position_h = RingBuffer(self.history_length)
         self.v_history = RingBuffer(self.history_length)
         self.omega_history = RingBuffer(self.history_length)
         self.blurred_paths = None
-        self.path_skip = 7
+        self.path_skip = 8
 
     def global_map_preprocess(self, resolution, image):
         im = format_vrep_image(resolution, image) # original image
@@ -571,7 +572,15 @@ class Lab2Program:
         paths = walls < 0.15
         if self.blurred_paths is None:
             blurred_map = skimage.filters.gaussian_filter(walls, sigma=2)
+            # # continual blurring
+            # blurred_map = skimage.filters.gaussian_filter(blurred_map, sigma=1)
             blurred_paths = blurred_map < 0.15
+            # plt.clf()
+            # plt.subplot(2,1,1)
+            # plt.imshow(blurred_map)
+            # plt.subplot(2,1,2)
+            # plt.imshow(blurred_paths)
+            # plt.pause(10)
             # np.save('binary_grid.npy', blurred_paths)
             return paths, blurred_paths
         else:
@@ -641,7 +650,7 @@ class Lab2Program:
                 _, finishPose = vrep.simxGetObjectPosition(
                     self.clientID, self.goalHandle, -1, vrep.simx_opmode_buffer)
                 self.finish_pixel = odom2pixelmap(finishPose[0], finishPose[1], self.map_side_length, im.shape[0])
-                contiguousPath = AStarBinaryGrid(self.blurred_paths).calculate_path(self.pose_pixel, self.finish_pixel)
+                contiguousPath = AStarBinaryGrid(self.blurred_paths, heuristic=euclidean).calculate_path(self.pose_pixel, self.finish_pixel)
                 self.GOALS = contiguousPath[::self.path_skip]
                 # SKIP THIS FIRST LOOP AND CONTINUE
                 continue
@@ -659,25 +668,58 @@ class Lab2Program:
 
             finalVector = np.sum(np.vstack((repulsionVectors, attractionVector)), axis=0)
             finalUnitVector = finalVector / np.linalg.norm(finalVector)
-            print "finalUnitVector: ", finalUnitVector
-
             # TODO: do we use the unit vector (for direction) only, or the finalVector?
-            finalValue, finalAngle = cart2pol(finalUnitVector[0], finalUnitVector[1])
+            finalValue, finalAngle = cart2pol(finalVector[0], finalVector[1])
 
+
+            #########################################
+            # Control of Angular Velocity Algorithm #
+            #########################################
+            # TODO: are we trying adjust our heading to the goal, or the vector specified by the potential field?
             error_theta = angle_diff(mapTheta2worldTheta(finalAngle, self.worldNorthTheta), theta)
             self.e_theta_h.append(error_theta)
 
-            k_angular_p = 1.85 * self.maxVelocity
+            # P, PD, or PID control
+            k_angular_p = 2.0 * self.maxVelocity
             k_angular_D = 0.175
             k_angular_S = 1.0
             k_angular_I = 8.0
             omega = k_angular_p * (
                   error_theta
-                + k_angular_D / k_angular_S * (self.e_theta_h[-1] - self.e_theta_h[-2])
+                # + k_angular_D / k_angular_S * (self.e_theta_h[-1] - self.e_theta_h[-2])
                 # + k_angular_S / k_angular_I * sum(self.e_theta_h)
             )
-            print "Omega: ", round(omega,1)
+            # omega ~ R, where R is finalvalue
+            # omega *= finalValue * 0.01
 
+            #########################################
+            # Control of Forward Velocity Algorithm #
+            #########################################
+            # TODO: are we trying adjust our heading to the goal, or the vector specified by the potential field?
+            error_position = finalValue
+            self.e_position_h.append(error_position)
+
+            # P, PD, or PID control
+            k_linear_p = 0.001 * self.maxVelocity
+            k_linear_D = 0.175
+            k_linear_S = 1.0
+            k_linear_I = 8.0
+            forward_vel = k_linear_p * (
+                  error_position
+                # + k_linear_D / k_linear_S * (self.e_position_h[-1] - self.e_position_h[-2])
+                # + k_position_S / k_position_I * sum(self.e_position_h)
+            )
+            # forward_vel ~ R, where R is finalvalue
+            # forward_vel *= finalValue * 0.01
+
+            ################################
+            # Have you achieved your goal? #
+            ################################
+            goal_distance = np.linalg.norm(self.goal_pose_pixel - self.pose_pixel)
+            if goal_distance <= 4:
+                self.curr_goal += 1
+
+            """DEPRECIATED
             #############################
             # StateController Algorithm #
             #############################
@@ -689,16 +731,10 @@ class Lab2Program:
                 # omega *= 0.25
             else:
                 # Direct yourself to the goal
-                goal_distance = np.linalg.norm(self.goal_pose_pixel - self.pose_pixel)
                 print "distance_from_goal: ", goal_distance
-                if goal_distance <= 4:
-                    # Achieved Goal!
-                    # forward_vel = self.maxVelocity * 0.05 * goal_distance # Slow down to prepare for the next one
-                    forward_vel = self.maxVelocity * 0.05 * goal_distance # Slow down to prepare for the next one
-                    self.curr_goal += 1
                 else:
                     forward_vel = self.maxVelocity * 0.10 * goal_distance
-
+            """
 
             # Store the results in the v and omega history vectors
             self.v_history.append(forward_vel)
@@ -719,8 +755,15 @@ class Lab2Program:
                 plt.title("Error Theta: %f" % error_theta)
             self.idash.add(plot_current_and_desired_heading)
             self.idash.add(self.plot_theta_history)
-            self.idash.add(lambda: plt.plot([v_val for v_val in self.v_history]) and plt.ylim(0, 15))
-            self.idash.add(lambda: plt.plot([omega_val for omega_val in self.omega_history]) and plt.ylim(-15,15))
+            self.idash.add(lambda:
+                    plt.plot([v_val for v_val in self.v_history])
+                and plt.ylim(0, 15)
+                and plt.title('Forward Velocity History')
+            )
+            self.idash.add(lambda:
+                    plt.plot([omega_val for omega_val in self.omega_history])
+                and plt.ylim(-15,15)
+                and plt.title('Angular Velocity History'))
 
             self.idash.plotframe()
 
@@ -754,6 +797,7 @@ class Lab2Program:
             plt.xlim([0, len(self.theta_history)])
         ylim = np.pi + 0.5
         plt.ylim([-ylim, ylim])
+        plt.title('Theta History')
 
     def plot_all_goals(self, im):
         # display all goals
@@ -764,16 +808,12 @@ class Lab2Program:
         _ = vrep.simxStopSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
         vrep.simxFinish(self.clientID)
         print 'Program ended'
-        sys.exit(0)
+        # sys.exit(0)
 
     def run(self):
         if self.clientID!=-1:
-            try:
-                _ = vrep.simxStartSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
-                self.robot_code()
-            except Exception, e:
-                print e
-                self.clean_exit()
+            _ = vrep.simxStartSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
+            self.robot_code()
 
         self.clean_exit()
 
