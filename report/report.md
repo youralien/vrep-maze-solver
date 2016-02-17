@@ -67,14 +67,34 @@ The LIDAR measurements are transformed into repulsive force vectors and the diff
 
 #### Controlling the robot towards intermediate goals
 
-In the stationary turning state
+Using the desired heading produced from the artifical potential field, we calculate the error between our current heading and the desired, which I call 1error_theta`. In addition, I treated the magnitude of the potential field vector as my error in position.  While not quite equivalent, this value behaves in the proper intuition at the extreme cases:  If the robot is on top of the goal, and no walls are around it, this magnitude should be 0. `error_theta` and `error_position` forms the basis for the controller linear and angular velocity controllers.
 
-* P / PD / PID control?
-* Setting the angular velocity to be less (half?)
+I ended up using a P-Controller for both, given by the simple equations
 
+    k_angular_p = 2.0 * self.maxVelocity
+    omega = k_angular_p * error_theta
+
+    k_linear_p = 0.001 * self.maxVelocity
+    forward_vel = k_linear_p * error_position
+
+The variable maxVelocity was used as a tunable constant here to increase the robot speed, without suffering an imbalance in the ability to turn.  The idea here was that if the linear velocity increases, the angular velocity will have to increase in order to keep the same turning radius.
 
 #### Accounting for the moving doors
-TODO FUCK
+As any good engineer will approach a problem, I tried to solve the maze solver by breaking it down into sub tasks.  The sub task I was most recently working on was the path planning and navigation of the robot from start to finish, without the worry of doors opening and closing dynamically. Since I ran out of time in this lab, I did not attempt to adjust my algorithm to account for the the dynamics of the doors.
 
 # Results and Discussion
-How well your algorithm performs, document the success and failure. Assess the success of your program with regard to the reported results, and explain any limitations, problems or improvements you would make.
+My algorithm succeeds in the following areas:
+
+1) Using the A* algorithm and knowledge of the global overhead map to plan a route from start position to goal.
+2) implements a LIDAR-inspired sensor using image processing, which gives sensible repulsion vectors which become elements of an artificial potential field equation for determining the next desired heading.
+3) navigating a differential drive robot from start to goal state, following the intermediate goal markers discovered by the A* path planning algorithm.
+
+It fails in a number of ways too:
+
+1) The robot has some sorts of oscillations when following intermediate goals i.e. instead of heading straight after orienting to a set point, the robot will move forward in the direction of the set point, while continually changing its angle greater and less than the set point, but not simply equal
+2) The robot still touches the walls by making it towards its intermediate destinations.
+3) The robot does not account for the dynamics of the doors, instead treating them as static walls, where their vrep script is turned off.
+
+I attempted to fix the weakness of oscillations about the theta set point without much luck by simply tuning the controller coefficients.  Better PID knowledge may have helped, but more time and trial and error would be required.
+
+The touching of the walls is probably due to the fact that the current attractive and repulsive coefficients in the artificial potential field algorithm weights the attractive force more heavily than the repulsive one.  I attempted to correct this increasing the coefficients, but I did not find a successful one that fixed the wall bumping problem completely.  Other approaches could be increasing the distance of influence for the repulsive functions.
