@@ -652,6 +652,8 @@ class Lab2Program:
                 self.finish_pixel = odom2pixelmap(finishPose[0], finishPose[1], self.map_side_length, im.shape[0])
                 contiguousPath = AStarBinaryGrid(self.blurred_paths, heuristic=euclidean).calculate_path(self.pose_pixel, self.finish_pixel)
                 self.GOALS = contiguousPath[::self.path_skip]
+                # Gotta include the last goal again, just in case.
+                self.GOALS.append(contiguousPath[-1])
                 # SKIP THIS FIRST LOOP AND CONTINUE
                 continue
             else:
@@ -747,6 +749,7 @@ class Lab2Program:
             _ = vrep.simxSetJointTargetVelocity(
                 self.clientID,self.rightMotor,ctrl_sig_right,vrep.simx_opmode_oneshot_wait) # set right wheel velocity
 
+            self.idash.add(lambda: self.plot_all_goals(im))
             self.idash.add(lambda: self.plot_maze(self.blurred_paths*1.0, m, n, goal_m, goal_n))
             self.idash.add(lambda: self.plot_maze(im, m, n, goal_m, goal_n))
             def plot_current_and_desired_heading():
@@ -754,16 +757,16 @@ class Lab2Program:
                 self.plot_unit_quiver(pol2cart(1, worldTheta2mapTheta(theta, self.worldNorthTheta)), 'k')
                 plt.title("Error Theta: %f" % error_theta)
             self.idash.add(plot_current_and_desired_heading)
-            self.idash.add(self.plot_theta_history)
-            self.idash.add(lambda:
-                    plt.plot([v_val for v_val in self.v_history])
-                and plt.ylim(0, 15)
-                and plt.title('Forward Velocity History')
-            )
-            self.idash.add(lambda:
-                    plt.plot([omega_val for omega_val in self.omega_history])
-                and plt.ylim(-15,15)
-                and plt.title('Angular Velocity History'))
+            # self.idash.add(self.plot_theta_history)
+            # self.idash.add(lambda:
+            #         plt.plot([v_val for v_val in self.v_history])
+            #     and plt.ylim(0, 15)
+            #     and plt.title('Forward Velocity History')
+            # )
+            # self.idash.add(lambda:
+            #         plt.plot([omega_val for omega_val in self.omega_history])
+            #     and plt.ylim(-15,15)
+            #     and plt.title('Angular Velocity History'))
 
             self.idash.plotframe()
 
@@ -801,8 +804,10 @@ class Lab2Program:
 
     def plot_all_goals(self, im):
         # display all goals
+        im_copy = im.copy()
         for goal_idx in range(len(self.GOALS)):
-            im[self.GOALS[goal_idx][0], self.GOALS[goal_idx][1]] = np.array((1.0, 1.0, 1.0))
+            im_copy[self.GOALS[goal_idx][0], self.GOALS[goal_idx][1]] = np.array((1.0, 1.0, 1.0))
+        plt.imshow(im_copy)
 
     def clean_exit(self):
         _ = vrep.simxStopSimulation(self.clientID,vrep.simx_opmode_oneshot_wait)
