@@ -54,16 +54,3 @@ class PriorityQueueSet(object):
         if not (item in self.set):
             self.set[item] = True
             heapq.heappush(self.heap, item)
-
-if __name__ == "__main__":
-    a = Tree()
-    a['1']['2'] = 3
-    a['1']['3']['4'] = 4
-    print a['1']['3']
-    print a['1']['3'].parent
-    print a['1']['3'].parent.parent
-    print a['1'].parent
-    b = Tree({"1": 1, "2": {"1": 3}})
-    print b
-    c = Tree('{"1": 1, "2": {"1": 3}}')
-    print c
